@@ -26,6 +26,12 @@ class TableStore:
         self._tables[table.id] = table
         return table
 
+    def put(self, table_id: str, title: str, rows: list[dict], columns: list[str] | None = None, source_id: str | None = None, **meta) -> Table:
+        """Add or replace a table under a fixed id (derived tables such as T_rank are recomputed on every analysis)."""
+        table = Table(table_id, title, columns or (list(rows[0]) if rows else []), rows, source_id, meta)
+        self._tables[table_id] = table
+        return table
+
     def get(self, table_id: str) -> Table:
         if table_id not in self._tables:
             raise KeyError(f"unknown table {table_id}; known: {', '.join(self._tables) or 'none'}")
