@@ -1,194 +1,594 @@
 <!doctype html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Hospital Atlas</title>
-        <style>
-            * {
-                box-sizing: border-box;
-                margin: 0;
-                padding: 0;
-            }
-            body {
-                font-family: system-ui, sans-serif;
-                height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 3rem 1rem;
-            }
-            #container {
-                width: 100%;
-                max-width: 900px;
-                display: flex;
-                flex-direction: column;
-                border: 1px solid #e0e0e0;
-            }
-            #messages {
-                overflow-y: auto;
-                padding: 2rem;
-                display: flex;
-                flex-direction: column;
-                gap: 1.5rem;
-                min-height: 450px;
-                max-height: 70vh;
-            }
-            .msg {
-                line-height: 1.5;
-                max-width: 80%;
-            }
-            .msg.user {
-                align-self: flex-end;
-                text-align: right;
-            }
-            .msg .role {
-                font-size: 0.75rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                color: #999;
-                margin-bottom: 0.25rem;
-            }
-            .msg.loading .content {
-                color: #999;
-            }
-            #input-area {
-                display: flex;
-                gap: 1rem;
-                padding: 1.5rem;
-                border-top: 1px solid #e0e0e0;
-            }
-            #user-input {
-                flex: 1;
-                padding: 0.75rem 0;
-                border: none;
-                border-bottom: 1px solid #e0e0e0;
-                font-size: 1rem;
-                outline: none;
-            }
-            #user-input:focus {
-                border-bottom-color: #000;
-            }
-            button {
-                padding: 0.75rem 1.5rem;
-                background: #000;
-                color: #fff;
-                border: none;
-                font-size: 0.75rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                cursor: pointer;
-            }
-            .tool {
-                font-family: ui-monospace, monospace;
-                font-size: 0.75rem;
-                color: #555;
-                background: #f5f5f5;
-                border-left: 3px solid #f59e0b;
-                padding: 0.5rem 0.75rem;
-                margin: 0.25rem 0 0.75rem;
-                white-space: pre-wrap;
-                word-break: break-word;
-            }
-            .tool .label {
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                color: #b45309;
-            }
-            button:disabled {
-                opacity: 0.3;
-            }
-        </style>
-    </head>
-    <body>
-        <div id="container">
-            <div id="messages"></div>
-            <div id="input-area">
-                <input
-                    type="text"
-                    id="user-input"
-                    placeholder="Type a message..."
-                    autocomplete="off"
-                />
-                <button id="send-btn">Send</button>
-            </div>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hospital Atlas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='white'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+:root {
+  --bg: #f6f8f9; --surface: #ffffff; --surface-2: #eef2f4; --border: #d8e0e4; --text: #14212b; --muted: #55656f;
+  --accent: #0f766e; --accent-ink: #ffffff; --accent-soft: #d9f0ec; --flag: #b45309; --flag-soft: #fdf0dc; --danger: #b42318; --danger-soft: #fde8e6;
+  --user: #e3eef6; --shadow: 0 1px 2px rgba(20,33,43,.08), 0 6px 20px rgba(20,33,43,.06); --focus: #0b5fff;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+:root[data-resolved="dark"] {
+  --bg: #0e1519; --surface: #151f25; --surface-2: #1c2a32; --border: #2a3a44; --text: #e6eef2; --muted: #9bb0bb;
+  --accent: #38b2a5; --accent-ink: #04201d; --accent-soft: #14312f; --flag: #f1a94e; --flag-soft: #36280f; --danger: #ff8a7d; --danger-soft: #3a1b18;
+  --user: #1d3140; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.3); --focus: #7aa7ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 8px; z-index: 100; }
+.skip:focus { left: 8px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- layout */
+#app { display: grid; grid-template-rows: 56px 1fr; height: 100%; }
+header { display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+header h1 { white-space: nowrap; font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; }
+.logo { width: 24px; height: 24px; }
+.chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid transparent; white-space: nowrap; }
+.spacer { flex: 1; }
+.icon-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; min-height: 34px; }
+.icon-btn:hover { background: var(--surface-2); }
+.only-narrow { display: none; }
+#layout { display: grid; grid-template-columns: 264px minmax(0, 1fr) 400px; min-height: 0; }
+aside#sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+#sidebar .top { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 9px 12px; font-weight: 600; cursor: pointer; }
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled { opacity: .5; cursor: default; }
+#search { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+#chatlist { overflow-y: auto; padding: 0 8px 8px; flex: 1; }
+.group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 12px 8px 4px; }
+.chat-item { display: flex; align-items: center; gap: 4px; border-radius: 8px; padding: 2px 4px 2px 8px; }
+.chat-item:hover, .chat-item.active { background: var(--surface-2); }
+.chat-item.active { box-shadow: inset 3px 0 0 var(--accent); }
+.chat-item button.open { flex: 1; text-align: left; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item input.rename { flex: 1; min-width: 0; padding: 5px 6px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); }
+.chat-item .del { background: none; border: 0; cursor: pointer; color: var(--muted); padding: 6px; border-radius: 6px; opacity: 0; }
+.chat-item:hover .del, .chat-item .del:focus-visible { opacity: 1; }
+.chat-item .del:hover { color: var(--danger); }
+#sidebar .bottom { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+.link-btn { background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 4px; }
+.link-btn:hover { color: var(--danger); }
+
+main#main { display: grid; grid-template-rows: 1fr auto; min-height: 0; min-width: 0; }
+#scroll { overflow-y: auto; padding: 20px 16px 8px; }
+#thread { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.notice { max-width: 760px; margin: 0 auto 12px; background: var(--flag-soft); color: var(--text); border: 1px solid var(--flag); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.welcome { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: var(--shadow); }
+.welcome h2 { margin: 0 0 6px; font-size: 22px; }
+.welcome p { margin: 6px 0; color: var(--muted); }
+.welcome dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 14px 0; }
+.welcome dt { font-weight: 600; } .welcome dd { margin: 0; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chipbtn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 7px 14px; cursor: pointer; text-align: left; }
+.chipbtn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.vintage { font-size: 12px; color: var(--muted); margin-top: 12px; font-family: var(--mono); }
+
+.msg { display: flex; flex-direction: column; gap: 6px; }
+.msg .who { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.msg.user .bubble { align-self: flex-end; background: var(--user); border-radius: 14px 14px 4px 14px; padding: 10px 14px; max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.user .who { align-self: flex-end; }
+.msg.assistant .bubble { background: var(--surface); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 14px 18px; box-shadow: var(--shadow); overflow-wrap: anywhere; }
+.msg.error .bubble { background: var(--danger-soft); border-color: var(--danger); }
+.md h2 { font-size: 18px; margin: 0 0 10px; line-height: 1.3; }
+.md h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
+.md p { margin: 8px 0; } .md ul { padding-left: 20px; margin: 6px 0; } .md li { margin: 3px 0; }
+.md a { color: var(--accent); }
+.md sup a { text-decoration: none; font-family: var(--mono); font-size: 11px; padding: 0 2px; border-radius: 4px; background: var(--accent-soft); }
+.md sup a:hover { background: var(--accent); color: var(--accent-ink); }
+.md code { font-family: var(--mono); font-size: 13px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.md pre { background: var(--surface-2); padding: 10px; border-radius: 8px; overflow-x: auto; }
+.tablewrap { overflow-x: auto; margin: 10px 0; border: 1px solid var(--border); border-radius: 10px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.md th, .md td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.md th { background: var(--surface-2); font-weight: 600; position: sticky; top: 0; }
+.md tr:last-child td { border-bottom: 0; }
+.md em { color: var(--muted); }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.badge { font-size: 11px; font-family: var(--mono); padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.badge.warn { background: var(--flag-soft); color: var(--flag); border-color: var(--flag); }
+.badge.ok { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.actions { display: flex; gap: 4px; margin-left: auto; }
+.actions button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+.actions button:hover { background: var(--surface-2); color: var(--text); }
+.followchips { margin-top: 10px; }
+.pending .bubble { display: flex; flex-direction: column; gap: 8px; }
+.dots { display: inline-flex; gap: 4px; } .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite ease-in-out; } .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.skeleton { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+#timeline:empty { display: none; }
+#timeline { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+
+footer#composer { padding: 8px 16px 14px; background: linear-gradient(transparent, var(--bg) 30%); }
+.composer-box { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 8px 10px; }
+.composer-box:focus-within { border-color: var(--accent); }
+#input { width: 100%; border: 0; resize: none; background: transparent; outline: none; max-height: 160px; min-height: 44px; padding: 6px 4px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls select { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 5px 8px; max-width: 220px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--bg); padding: 5px 10px; cursor: pointer; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.hint { font-size: 11px; color: var(--muted); }
+#send.stop { background: var(--danger); color: #fff; }
+
+aside#evidence { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--border); }
+.tabs button { background: none; border: 0; padding: 8px 12px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 500; }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.panes { flex: 1; overflow-y: auto; padding: 14px; }
+.pane[hidden] { display: none; }
+.empty { color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; padding: 18px; text-align: center; font-size: 14px; }
+.src { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.src.hl { border-color: var(--accent); background: var(--accent-soft); }
+.src b { font-family: var(--mono); color: var(--accent); }
+.src .meta { color: var(--muted); font-size: 12px; margin: 2px 0 4px; }
+.src a { color: var(--accent); font-size: 12px; }
+
+#toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 50; align-items: center; }
+.toast { background: var(--text); color: var(--bg); border-radius: 10px; padding: 9px 14px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); font-size: 14px; }
+.toast button { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font-weight: 600; }
+dialog { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); padding: 20px; max-width: 380px; box-shadow: var(--shadow); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+dialog .row button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; }
+dialog .row .danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+#scrim { display: none; }
+
+@media (max-width: 1180px) {
+  #layout { grid-template-columns: 264px minmax(0, 1fr); }
+  aside#evidence { position: fixed; right: 0; top: 56px; bottom: 0; width: min(420px, 92vw); transform: translateX(100%); transition: transform .2s; z-index: 30; box-shadow: var(--shadow); }
+  body.evidence-open aside#evidence { transform: none; }
+  .only-narrow { display: inline-block; }
+}
+@media (max-width: 760px) {
+  #layout { grid-template-columns: minmax(0, 1fr); }
+  aside#sidebar { position: fixed; left: 0; top: 56px; bottom: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; z-index: 30; box-shadow: var(--shadow); }
+  body.sidebar-open aside#sidebar { transform: none; }
+  body.sidebar-open #scrim, body.evidence-open #scrim { display: block; position: fixed; inset: 56px 0 0 0; background: rgba(0,0,0,.4); z-index: 20; }
+  header .chip.vintage-chip { display: none; }
+  #scroll { padding: 14px 16px 8px; } footer#composer { padding: 8px 16px 12px; }
+  .msg.user .bubble { max-width: 94%; }
+  .welcome { padding: 18px; } .welcome dl { grid-template-columns: 1fr; }
+  .hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media print {
+  header, aside, footer, .actions, .badges, .followchips, #toasts { display: none !important; }
+  #layout { display: block; } body, #app, #scroll { height: auto; overflow: visible; background: #fff; color: #000; }
+  .msg.assistant .bubble { box-shadow: none; border: 0; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#input">Skip to the message box</a>
+<div id="app">
+  <header>
+    <button class="icon-btn only-narrow" id="menu-btn" aria-label="Show saved research" aria-controls="sidebar">☰</button>
+    <h1><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0f766e"/><path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z" fill="#fff"/></svg>Hospital Atlas</h1>
+    <span class="chip vintage-chip" title="Medicare inpatient payments are calendar 2024; quality measures use CMS Care Compare periods shown in each report.">CMS data · CY2024 Medicare inpatient · NY only</span>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="evidence-btn" aria-controls="evidence" aria-label="Show evidence panel">Evidence</button>
+    <button class="icon-btn" id="theme-btn" aria-label="Theme: system. Click to change">◐ System</button>
+  </header>
+  <div id="layout">
+    <aside id="sidebar" aria-label="Saved research">
+      <div class="top">
+        <button class="primary" id="new-btn">+ New research</button>
+        <label class="sr" for="search">Search saved research</label>
+        <input id="search" type="search" placeholder="Search saved research" autocomplete="off" />
+      </div>
+      <nav id="chatlist" aria-label="Saved conversations"></nav>
+      <div class="bottom"><span id="count"></span><button class="link-btn" id="clear-btn">Clear all</button></div>
+    </aside>
+    <main id="main">
+      <div id="scroll">
+        <div id="notice-slot"></div>
+        <div id="thread" role="log" aria-live="polite" aria-label="Conversation"></div>
+      </div>
+      <footer id="composer">
+        <div class="composer-box">
+          <label class="sr" for="input">Ask about New York hospital cost or quality</label>
+          <textarea id="input" rows="1" placeholder="Ask about cost or quality, e.g. hip replacement payments in Brooklyn"></textarea>
+          <div class="controls">
+            <label class="sr" for="model">Model</label><select id="model"></select>
+            <div class="seg" role="group" aria-label="Effort" id="effort"></div>
+            <span class="spacer"></span>
+            <span class="hint">Enter to send · Shift+Enter for a new line · Ctrl/⌘+K new research</span>
+            <button class="primary" id="send">Send</button>
+          </div>
         </div>
-        <script>
-            const messages = document.getElementById("messages");
-            const userInput = document.getElementById("user-input");
-            const sendBtn = document.getElementById("send-btn");
-            let sessionId = null;
+      </footer>
+    </main>
+    <aside id="evidence" aria-label="Evidence">
+      <div class="tabs" role="tablist" aria-label="Evidence views">
+        <button role="tab" id="tab-btn-map" aria-selected="true" aria-controls="tab-map" data-tab="map">Map</button>
+        <button role="tab" id="tab-btn-tables" aria-selected="false" aria-controls="tab-tables" data-tab="tables">Tables</button>
+        <button role="tab" id="tab-btn-charts" aria-selected="false" aria-controls="tab-charts" data-tab="charts">Charts</button>
+        <button role="tab" id="tab-btn-sources" aria-selected="false" aria-controls="tab-sources" data-tab="sources">Sources</button>
+      </div>
+      <div class="panes">
+        <section class="pane" id="tab-map" role="tabpanel" aria-labelledby="tab-btn-map"></section>
+        <section class="pane" id="tab-tables" role="tabpanel" aria-labelledby="tab-btn-tables" hidden></section>
+        <section class="pane" id="tab-charts" role="tabpanel" aria-labelledby="tab-btn-charts" hidden></section>
+        <section class="pane" id="tab-sources" role="tabpanel" aria-labelledby="tab-btn-sources" hidden></section>
+      </div>
+    </aside>
+  </div>
+</div>
+<div id="scrim"></div>
+<div id="toasts" aria-live="polite"></div>
+<dialog id="confirm"><p id="confirm-text"></p><div class="row"><button id="confirm-no" type="button">Cancel</button><button id="confirm-yes" class="danger" type="button">Delete all</button></div></dialog>
 
-            function addMessage(role, text, isLoading = false) {
-                const div = document.createElement("div");
-                div.className =
-                    "msg " +
-                    (role === "you" ? "user" : "assistant") +
-                    (isLoading ? " loading" : "");
-                div.innerHTML =
-                    '<div class="role">' +
-                    role +
-                    '</div><div class="content">' +
-                    text +
-                    "</div>";
-                messages.appendChild(div);
-                messages.scrollTop = messages.scrollHeight;
-                return div;
-            }
+<script>
+"use strict";
+/* ============ small helpers ============ */
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (v !== false && v != null) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids) if (k != null) n.append(k);
+  return n;
+};
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 
-            async function send() {
-                const text = userInput.value.trim();
-                if (!text) return;
+/* ============ storage: localStorage with in-memory fallback ============ */
+const KEY = "hospital-atlas.v1";
+let memory = { chats: [], prefs: {} };
+let storageOk = true;
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const d = JSON.parse(raw); memory = { chats: Array.isArray(d.chats) ? d.chats : [], prefs: d.prefs || {} }; }
+  } catch (e) { storageOk = false; }
+}
+function saveStore() {
+  const attempt = () => localStorage.setItem(KEY, JSON.stringify(memory));
+  try { attempt(); storageOk = true; }
+  catch (e) {
+    try { // quota: drop artifacts from all but the newest chat, retry once
+      memory.chats.slice(1).forEach(c => c.messages.forEach(m => { delete m.artifacts; delete m.tool_calls; }));
+      attempt(); storageOk = true;
+    } catch (e2) { storageOk = false; }
+  }
+  showNotice();
+}
+function showNotice() {
+  const slot = $("#notice-slot"); slot.textContent = "";
+  if (!storageOk) slot.append(el("div", { class: "notice", role: "status", text: "Saved research can't be stored in this browser (private mode or blocked storage). Chats work, but disappear when you close the tab." }));
+}
 
-                userInput.value = "";
-                sendBtn.disabled = true;
-                addMessage("you", text);
-                const loading = addMessage("assistant", "Thinking...", true);
+/* ============ state ============ */
+let models = { models: [], efforts: [], default: {} };
+let current = null;         // the open conversation
+let busy = null;            // {controller, runId} while a request is in flight
+const pref = (k, d) => (memory.prefs[k] ?? d);
+const setPref = (k, v) => { memory.prefs[k] = v; saveStore(); };
 
-                try {
-                    const res = await fetch("/chat", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            message: text,
-                            session_id: sessionId,
-                        }),
-                    });
-                    const data = await res.json();
-                    sessionId = data.session_id;
+function newChat() {
+  const c = { id: uid(), title: "New research", created: Date.now(), updated: Date.now(), model: pref("model", models.default.model), effort: pref("effort", models.default.effort), session_id: uid(), messages: [], needsSeed: false, titled: false };
+  return c;
+}
+function startNew() {
+  if (busy) return toast("Wait for the current answer, or press Stop.");
+  if (current && current.messages.length === 0) { render(); return; }
+  current = newChat(); render(); $("#input").focus(); closeDrawers();
+}
 
-                    // Show each tool the harness ran, above the assistant's answer
-                    for (const call of data.tool_calls || []) {
-                        const div = document.createElement("div");
-                        div.className = "tool";
-                        const label = document.createElement("span");
-                        label.className = "label";
-                        label.textContent = "tool call  ";
-                        div.appendChild(label);
-                        div.appendChild(
-                            document.createTextNode(
-                                call.name + "(" + JSON.stringify(call.args) + ")\n→ " + call.result,
-                            ),
-                        );
-                        messages.insertBefore(div, loading);
-                    }
-                    loading.querySelector(".content").textContent =
-                        data.response;
-                    loading.classList.remove("loading");
-                } catch (e) {
-                    loading.querySelector(".content").textContent =
-                        "Error: " + e.message;
-                    loading.classList.remove("loading");
-                }
-                sendBtn.disabled = false;
-                userInput.focus();
-            }
+/* ============ theme ============ */
+const mq = window.matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const t = pref("theme", "system");
+  const resolved = t === "system" ? (mq.matches ? "dark" : "light") : t;
+  document.documentElement.dataset.theme = t; document.documentElement.dataset.resolved = resolved;
+  const label = { system: "◐ System", light: "☀ Light", dark: "☾ Dark" }[t];
+  $("#theme-btn").textContent = label; $("#theme-btn").setAttribute("aria-label", "Theme: " + t + ". Click to change");
+}
+$("#theme-btn").addEventListener("click", () => { const order = ["system", "light", "dark"]; setPref("theme", order[(order.indexOf(pref("theme", "system")) + 1) % 3]); applyTheme(); });
+mq.addEventListener("change", applyTheme);
 
-            sendBtn.addEventListener("click", send);
-            userInput.addEventListener("keydown", function (e) {
-                if (e.key === "Enter") send();
-            });
-            userInput.focus();
-        </script>
-    </body>
+/* ============ toasts and dialogs ============ */
+function toast(text, actionLabel, onAction, ms = 8000) {
+  const t = el("div", { class: "toast", role: "status" }, el("span", { text }));
+  let timer;
+  if (actionLabel) t.append(el("button", { text: actionLabel, onclick: () => { clearTimeout(timer); t.remove(); onAction(); } }));
+  $("#toasts").append(t);
+  timer = setTimeout(() => t.remove(), actionLabel ? ms : 3500);
+}
+function confirmDialog(text, yes) {
+  const d = $("#confirm"); $("#confirm-text").textContent = text;
+  $("#confirm-yes").textContent = yes; d.showModal();
+  return new Promise(res => { d.addEventListener("close", () => res(d.returnValue === "yes"), { once: true }); });
+}
+$("#confirm-yes").addEventListener("click", () => { $("#confirm").returnValue = "yes"; $("#confirm").close("yes"); });
+$("#confirm-no").addEventListener("click", () => $("#confirm").close("no"));
+
+/* ============ markdown (marked + DOMPurify) ============ */
+if (window.DOMPurify) {
+  DOMPurify.addHook("afterSanitizeAttributes", n => { if (n.tagName === "A") { const h = n.getAttribute("href") || ""; if (/^https?:/i.test(h)) { n.setAttribute("target", "_blank"); n.setAttribute("rel", "noopener noreferrer"); } } });
+}
+function renderMarkdown(text) {
+  const box = el("div", { class: "md" });
+  if (!window.marked || !window.DOMPurify) { box.append(el("pre", { text })); return box; }  // CDN blocked: show text, never raw HTML
+  let html = marked.parse(text, { gfm: true, breaks: false, mangle: false, headerIds: false });
+  html = DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ["style", "form", "input", "button", "iframe", "img"], FORBID_ATTR: ["style", "onerror", "onclick"] });
+  const tpl = document.createElement("template"); tpl.innerHTML = html;
+  // [S3] -> superscript link to the Sources tab
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+  const hits = []; for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\[S\d+\]/.test(n.nodeValue) && !n.parentElement.closest("code, pre, a")) hits.push(n);
+  for (const n of hits) {
+    const frag = document.createDocumentFragment();
+    n.nodeValue.split(/(\[S\d+\])/).forEach(part => {
+      const m = /^\[(S\d+)\]$/.exec(part);
+      if (m) { const a = el("a", { href: "#src-" + m[1], "data-src": m[1], "aria-label": "Source " + m[1], text: m[1] }); frag.append(el("sup", {}, a)); } else if (part) frag.append(part);
+    });
+    n.replaceWith(frag);
+  }
+  tpl.content.querySelectorAll("table").forEach(t => { const w = el("div", { class: "tablewrap" }); t.replaceWith(w); w.append(t); });
+  box.append(tpl.content);
+  return box;
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest("a[data-src]"); if (!a) return;
+  e.preventDefault(); showTab("sources"); document.body.classList.add("evidence-open"); highlightSource(a.dataset.src);
+});
+
+/* ============ conversation list ============ */
+function dayLabel(ts) {
+  const d = new Date(ts), now = new Date(); const start = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(now) - start(d)) / 864e5);
+  return diff <= 0 ? "Today" : diff === 1 ? "Yesterday" : "Earlier";
+}
+function renderList() {
+  const q = $("#search").value.trim().toLowerCase();
+  const list = $("#chatlist"); list.textContent = "";
+  const chats = memory.chats.filter(c => c.messages.length || c === current).filter(c => !q || c.title.toLowerCase().includes(q) || c.messages.some(m => m.text.toLowerCase().includes(q)));
+  let last = "";
+  chats.sort((a, b) => b.updated - a.updated).forEach(c => {
+    const g = dayLabel(c.updated); if (g !== last) { list.append(el("div", { class: "group", text: g })); last = g; }
+    const item = el("div", { class: "chat-item" + (c === current ? " active" : "") });
+    const open = el("button", { class: "open", title: c.title + " (double-click to rename)", text: c.title, "aria-current": c === current ? "true" : false, onclick: () => openChat(c.id), ondblclick: () => rename(c, item) });
+    item.append(open, el("button", { class: "del", "aria-label": "Delete " + c.title, title: "Delete", text: "✕", onclick: () => removeChat(c) }));
+    list.append(item);
+  });
+  if (!chats.length) list.append(el("div", { class: "empty", text: q ? "No matches." : "Your research is saved here." }));
+  $("#count").textContent = memory.chats.filter(c => c.messages.length).length + " saved";
+}
+function rename(c, item) {
+  const input = el("input", { class: "rename", value: c.title, "aria-label": "Rename conversation", maxlength: 80 });
+  item.querySelector(".open").replaceWith(input); input.focus(); input.select();
+  const done = save => { if (save && input.value.trim()) { c.title = input.value.trim().slice(0, 80); c.titled = true; saveStore(); } renderList(); };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); });
+  input.addEventListener("blur", () => done(true));
+}
+function removeChat(c) {
+  if (busy && c === current) return toast("Wait for the current answer, or press Stop.");
+  const idx = memory.chats.indexOf(c); memory.chats.splice(idx, 1); saveStore();
+  if (c === current) { current = memory.chats.find(x => x.messages.length) || newChat(); if (current.messages.length === 0 && !memory.chats.includes(current)) {/* fresh, unsaved */} }
+  render();
+  toast("Deleted “" + c.title.slice(0, 40) + "”", "Undo", () => { memory.chats.splice(Math.min(idx, memory.chats.length), 0, c); saveStore(); current = c; render(); });
+}
+function openChat(id) {
+  if (busy) return toast("Wait for the current answer, or press Stop.");
+  const c = memory.chats.find(x => x.id === id); if (!c) return;
+  current = c; c.needsSeed = c.messages.length > 0; render(); closeDrawers();
+}
+$("#search").addEventListener("input", renderList);
+$("#new-btn").addEventListener("click", startNew);
+$("#clear-btn").addEventListener("click", async () => {
+  if (!memory.chats.some(c => c.messages.length)) return toast("Nothing to clear.");
+  if (busy) return toast("Wait for the current answer, or press Stop.");
+  if (await confirmDialog("Delete all saved research in this browser? This can't be undone.", "Delete all")) { memory.chats = []; saveStore(); current = newChat(); render(); toast("All saved research deleted."); }
+});
+
+/* ============ rendering the thread ============ */
+const STARTERS = [
+  "Which 5 New York hospitals have the highest average Medicare payment for a major hip or knee joint replacement (DRG 470), and how do they compare with the New York and national averages?",
+  "Compare Montefiore with the other Bronx hospitals on heart failure (DRG 291): cost and 30-day readmissions.",
+  "Which NY hospitals are the best?",
+  "How much would I personally pay out of pocket for a hip replacement at Montefiore?",
+];
+const STARTER_LABELS = ["Top 5 hip/knee payments in NY (Q1)", "Montefiore vs other Bronx hospitals, heart failure (Q2)", "Which NY hospitals are the best? (vague)", "What would I pay out of pocket? (the data can't say)"];
+function welcome() {
+  const w = el("section", { class: "welcome", "aria-label": "Welcome" },
+    el("h2", { text: "Benchmark New York hospitals on cost and quality" }),
+    el("p", { text: "Ask a question and a team of research agents pulls live CMS data, computes the numbers in code, and writes a cited report you can check." }),
+    el("dl", {}, el("dt", { text: "Explores" }), el("dd", { text: "Medicare payments by DRG, readmissions, mortality and complications, patient-safety indicators and patient-survey stars for NY hospitals." }),
+      el("dt", { text: "For" }), el("dd", { text: "Benchmarking and strategy analysts comparing a hospital with its peers." }),
+      el("dt", { text: "How" }), el("dd", { text: "Name a condition or procedure plus a hospital or region. A vague question gets one clarifying question." })));
+  const chips = el("div", { class: "chips" }); STARTERS.forEach((s, i) => chips.append(el("button", { class: "chipbtn", text: STARTER_LABELS[i], onclick: () => send(s) })));
+  w.append(chips, el("div", { class: "vintage", text: "CY2024 Medicare inpatient · CMS Care Compare quality measures · NY only · fee-for-service Medicare, not prices" }));
+  return w;
+}
+function badgesFor(m) {
+  const b = el("div", { class: "badges" });
+  if (m.meta && !m.meta.error) {
+    const label = (m.meta.model_label || m.meta.model || "").replace(/^vertex_ai\//, "").replace(/ \(.*\)/, "");
+    const eff = ({ low: "fast", medium: "balanced", high: "thorough" })[m.meta.effort] || m.meta.effort || "";
+    b.append(el("span", { class: "badge", text: [label, eff, m.meta.elapsed_s != null ? Math.round(m.meta.elapsed_s) + " s" : ""].filter(Boolean).join(" · ") }));
+    if (m.meta.rounds > 1) b.append(el("span", { class: "badge", text: m.meta.rounds + " research rounds" }));
+    if (m.meta.served_from === "degraded") b.append(el("span", { class: "badge warn", title: (m.meta.notes || []).join("; "), text: "fallback data used" }));
+    const a = m.meta.audit; if (a && (a.removed_citations || a.flagged_numbers || a.dropped_claims)) b.append(el("span", { class: "badge warn", title: "Unverifiable citations or numbers were removed before you saw this answer.", text: "audit: " + (a.removed_citations + a.flagged_numbers + a.dropped_claims) + " item(s) removed" }));
+    else if (a) b.append(el("span", { class: "badge ok", text: "audit clean" }));
+  }
+  if (/^## Partial results|_Partial report:/m.test(m.text)) b.append(el("span", { class: "badge warn", text: "partial report" }));
+  const act = el("div", { class: "actions" },
+    el("button", { text: "Copy", onclick: () => navigator.clipboard.writeText(m.text).then(() => toast("Copied"), () => toast("Copy blocked by the browser")) }),
+    el("button", { text: "Download .md", onclick: () => download(slug(current.title) + ".md", m.text) }),
+    el("button", { text: "Print / PDF", onclick: () => window.print() }));
+  b.append(act); return b;
+}
+function clarificationOptions(text) {
+  if (!/Reply with one of these/.test(text)) return [];
+  return [...text.matchAll(/^- (.+)$/gm)].map(m => m[1].trim()).slice(0, 4);
+}
+function messageNode(m, i, isLast) {
+  if (m.role === "user") return el("div", { class: "msg user" }, el("div", { class: "who", text: "You" }), el("div", { class: "bubble", text: m.text }));
+  const node = el("div", { class: "msg assistant" + (m.error ? " error" : "") }, el("div", { class: "who", text: "Hospital Atlas" }));
+  const bubble = el("div", { class: "bubble" });
+  if (m.error) { bubble.append(el("div", { text: m.text })); const prev = current.messages[i - 1]; if (prev && isLast) bubble.append(el("div", { class: "badges" }, el("button", { class: "chipbtn", text: "Retry", onclick: () => { current.messages.splice(i - 1, 2); send(prev.text); } }))); }
+  else {
+    bubble.append(renderMarkdown(m.text), badgesFor(m));
+    const opts = isLast ? clarificationOptions(m.text) : [];
+    if (opts.length) { const c = el("div", { class: "chips followchips" }); opts.forEach(o => c.append(el("button", { class: "chipbtn", text: o, onclick: () => send(o) }))); bubble.append(c); }
+  }
+  node.append(bubble); return node;
+}
+function render() {
+  const thread = $("#thread"); thread.textContent = "";
+  if (!current) current = newChat();
+  if (current.messages.length === 0) thread.append(welcome());
+  current.messages.forEach((m, i) => thread.append(messageNode(m, i, i === current.messages.length - 1)));
+  if (busy) thread.append(busy.node);
+  setControls(); renderList();
+  const lastArt = [...current.messages].reverse().find(m => m.artifacts);
+  renderEvidence(lastArt ? lastArt.artifacts : null);
+  const sc = $("#scroll"); sc.scrollTop = sc.scrollHeight;
+}
+
+/* ============ pickers ============ */
+function setControls() {
+  const sel = $("#model"); sel.textContent = "";
+  models.models.forEach(m => sel.append(el("option", { value: m.id, text: m.label })));
+  if (!models.models.some(m => m.id === current.model)) current.model = models.default.model;
+  sel.value = current.model;
+  const seg = $("#effort"); seg.textContent = "";
+  models.efforts.forEach(e => seg.append(el("button", { type: "button", text: e.label, "aria-pressed": String(e.id === current.effort), "data-effort": e.id, title: e.id === "low" ? "Fastest (about 20 s)" : e.id === "medium" ? "More reasoning (about a minute)" : "Most reasoning (about a minute)" })));
+  const stopping = !!busy; $("#send").textContent = stopping ? "Stop" : "Send"; $("#send").classList.toggle("stop", stopping);
+  sel.disabled = stopping; seg.querySelectorAll("button").forEach(b => b.disabled = stopping);
+}
+$("#model").addEventListener("change", e => { current.model = e.target.value; setPref("model", current.model); });
+$("#effort").addEventListener("click", e => { const b = e.target.closest("button[data-effort]"); if (!b) return; current.effort = b.dataset.effort; setPref("effort", current.effort); setControls(); });
+
+/* ============ send ============ */
+const input = $("#input");
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 160) + "px"; });
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
+$("#send").addEventListener("click", () => busy ? stop() : submit());
+function submit() { const t = input.value.trim(); if (t) { input.value = ""; input.style.height = "auto"; send(t); } }
+function stop() { if (busy) { busy.controller.abort(); } }
+
+async function send(text) {
+  if (busy) return toast("Still working on the last question.");
+  if (!current) current = newChat();
+  const chat = current;
+  if (!memory.chats.includes(chat)) memory.chats.unshift(chat);
+  const history = chat.needsSeed ? chat.messages.filter(m => !m.error).map(m => ({ role: m.role, content: m.text })).slice(-12) : undefined;
+  chat.messages.push({ role: "user", text });
+  if (!chat.titled) { chat.title = text.replace(/\s+/g, " ").slice(0, 48); chat.titled = true; }
+  chat.updated = Date.now(); saveStore();
+  const runId = "r" + uid().replace(/-/g, "").slice(0, 16);
+  const controller = new AbortController();
+  const stage = el("div", { id: "timeline", "aria-hidden": "true" });
+  const t0 = Date.now();
+  const label = el("span", { text: "Starting…" });
+  const node = el("div", { class: "msg assistant pending" }, el("div", { class: "who", text: "Hospital Atlas" }),
+    el("div", { class: "bubble" }, el("div", {}, el("span", { class: "dots" }, el("i"), el("i"), el("i")), " ", label), stage, el("div", { class: "skeleton", style: "width:90%" }), el("div", { class: "skeleton", style: "width:70%" })));
+  busy = { controller, runId, node }; render();
+  let since = 0;
+  const tick = setInterval(async () => {
+    label.textContent = (progressStage || "Working") + " · " + Math.round((Date.now() - t0) / 1000) + " s";
+    try {
+      const r = await fetch("/progress?run_id=" + runId + "&since=" + since, { signal: controller.signal }); const d = await r.json();
+      if (d.status !== "unknown") { progressStage = d.stage ? d.stage.charAt(0).toUpperCase() + d.stage.slice(1) : ""; since = d.next; window.Atlas && window.Atlas.onProgress && window.Atlas.onProgress(d, stage); }
+    } catch (e) { /* polling is best effort */ }
+  }, 1000);
+  let progressStage = "";
+  const body = { message: text, session_id: chat.session_id, model: chat.model, effort: chat.effort, run_id: runId };
+  if (history) body.history = history;
+  try {
+    const r = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    if (!r.ok) throw new Error("The server answered " + r.status + (r.status === 401 || r.status === 403 ? " (sign in again?)" : ""));
+    const d = await r.json();
+    chat.session_id = d.session_id || chat.session_id; chat.needsSeed = false;
+    const m = { role: "assistant", text: d.response, meta: d.meta || null, artifacts: d.artifacts || null, tool_calls: d.tool_calls || [] };
+    if (d.meta && d.meta.error) m.error = true;
+    chat.messages.push(m);
+  } catch (e) {
+    const aborted = e.name === "AbortError";
+    chat.messages.push({ role: "assistant", error: true, text: aborted ? "Stopped. The server may finish the run in the background; ask again when you're ready." : "Couldn't reach the research service: " + e.message });
+  } finally {
+    clearInterval(tick); busy = null; chat.updated = Date.now(); saveStore();
+    if (current === chat) { render(); input.focus(); const a = chat.messages[chat.messages.length - 1]; if (a.artifacts && matchMedia("(min-width: 1181px)").matches) document.body.classList.add("evidence-open"); }
+  }
+}
+
+/* ============ evidence panel (Map / Tables / Charts arrive in Phase 8; Sources works now) ============ */
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "tab-" + name);
+}
+document.querySelector(".tabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
+document.querySelector(".tabs").addEventListener("keydown", e => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const tabs = [...document.querySelectorAll(".tabs button")]; const i = tabs.indexOf(document.activeElement); if (i < 0) return;
+  const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); showTab(n.dataset.tab);
+});
+function emptyPane(id, text) { const p = $("#" + id); p.textContent = ""; p.append(el("div", { class: "empty", text })); }
+function renderEvidence(art) {
+  window.Atlas.artifacts = art;
+  if (!art) { emptyPane("tab-map", "Hospitals from your answer are mapped here."); emptyPane("tab-tables", "Ranking and comparison tables appear here."); emptyPane("tab-charts", "Charts appear here."); emptyPane("tab-sources", "Every dataset a report cites is listed here with its URL."); return; }
+  window.Atlas.renderMap(art); window.Atlas.renderTables(art); window.Atlas.renderCharts(art); renderSources(art);
+}
+function renderSources(art) {
+  const p = $("#tab-sources"); p.textContent = "";
+  if (!art.sources || !art.sources.length) return p.append(el("div", { class: "empty", text: "This answer used no datasets." }));
+  art.sources.forEach(s => p.append(el("div", { class: "src", id: "src-" + s.id },
+    el("div", {}, el("b", { text: s.id }), " ", s.dataset), el("div", { class: "meta", text: s.period + " · retrieved " + s.retrieved_at + (s.note ? " · " + s.note : "") }),
+    el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", text: "Open the exact query" }))));
+  p.append(el("button", { class: "chipbtn", text: "Copy sources", onclick: () => navigator.clipboard.writeText(art.sources.map(s => `[${s.id}] ${s.dataset} — ${s.period} — retrieved ${s.retrieved_at} — ${s.url}`).join("\n")).then(() => toast("Sources copied")) }));
+}
+function highlightSource(id) {
+  document.querySelectorAll(".src.hl").forEach(x => x.classList.remove("hl"));
+  const n = document.getElementById("src-" + id); if (n) { n.classList.add("hl"); n.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
+}
+// Hooks Phase 8 replaces. Keep the names stable.
+window.Atlas = {
+  artifacts: null,
+  renderMap: a => emptyPane("tab-map", (a.cohort || []).length ? "Map view arrives in the next update. Hospitals are in the Tables and Sources tabs." : "No hospitals to map for this answer."),
+  renderTables: a => { const p = $("#tab-tables"); p.textContent = ""; if (!(a.tables || []).length) return p.append(el("div", { class: "empty", text: "No tables for this answer." })); a.tables.forEach(t => p.append(el("p", { text: t.title }))); },
+  renderCharts: a => emptyPane("tab-charts", "Charts arrive in the next update."),
+  onProgress: null,
+};
+
+/* ============ export, drawers, shortcuts ============ */
+const slug = s => (s || "research").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "research";
+function download(name, text) { const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" })); const a = el("a", { href: url, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function closeDrawers() { document.body.classList.remove("sidebar-open"); if (matchMedia("(max-width: 1180px)").matches) document.body.classList.remove("evidence-open"); }
+$("#menu-btn").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
+$("#evidence-btn").addEventListener("click", () => document.body.classList.toggle("evidence-open"));
+$("#scrim").addEventListener("click", () => { document.body.classList.remove("sidebar-open", "evidence-open"); });
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); startNew(); }
+  else if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); input.focus(); }
+  else if (e.key === "Escape") document.body.classList.remove("sidebar-open", "evidence-open");
+});
+// conversation export lives in the message actions; this adds a whole-conversation export under the title list
+$("#count").addEventListener("dblclick", () => { if (current && current.messages.length) download(slug(current.title) + "-conversation.md", current.messages.map(m => (m.role === "user" ? "## You\n\n" : "## Hospital Atlas\n\n") + m.text).join("\n\n---\n\n")); });
+
+/* ============ boot ============ */
+(async function boot() {
+  loadStore(); applyTheme();
+  try { models = await (await fetch("/models")).json(); } catch (e) { models = { models: [{ id: "", label: "Default model" }], efforts: [{ id: "low", label: "Fast" }], default: { model: "", effort: "low" } }; toast("Couldn't load model options; using the default."); }
+  current = newChat(); showNotice();
+  const last = memory.chats.filter(c => c.messages.length).sort((a, b) => b.updated - a.updated)[0];
+  if (last) { current = last; last.needsSeed = true; }
+  render();
+})();
+</script>
+</body>
 </html>
