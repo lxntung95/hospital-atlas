@@ -1,0 +1,11 @@
+# course materials, not for the repo
+docs/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# os / editor
+.DS_Store
