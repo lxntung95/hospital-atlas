@@ -226,5 +226,5 @@ def detect(message: str, hospitals: list | None = None) -> Detected:
                         hints.append(res.matches[0].name)
                     break
     outside = out_of_scope_terms(message)
-    vague = not (cond or drgs or hints)
+    vague = not (cond or drgs or hints or outside)
     return Detected(cond, region, counties, drgs, hints, outside, vague)

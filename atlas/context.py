@@ -22,6 +22,9 @@ class RequestContext:
     tool_calls: list[dict] = field(default_factory=list)
     cohorts: dict[str, dict] = field(default_factory=dict)  # handle -> {"ccns": [...], "label": str}
     question: str = ""
+    prev_clarified: bool = False  # the previous assistant turn in this conversation was a clarification question
+    partials: list = field(default_factory=list)  # researcher tasks that timed out or failed this request
+    clarified: bool = False  # this turn ended in one
     facts: list = field(default_factory=list)  # filled by atlas.analyst.analyze
     gaps: list = field(default_factory=list)
     counters: dict[str, int] = field(default_factory=lambda: {"researchers": 0})

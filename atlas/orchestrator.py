@@ -1,16 +1,17 @@
 """The Lead and its tools: resolve a cohort, fan out researchers in parallel, then write. `answer()` runs one request.
 
-Phase 2 scope: the Lead is minimal (resolve -> dispatch -> write plain text). Analyst, Writer and validation arrive later.
+The Lead plans, fans out researchers, fills fillable gaps (max 2 extra rounds), then write_report composes the cited answer.
 """
 
 import asyncio
 import json
+import os
 from dataclasses import asdict, dataclass
 
 from agents import Agent, RunContextWrapper, Runner, SQLiteSession
 from agents.agent import StopAtTools
 
-from atlas import analyst, config, crosswalk, render, validate
+from atlas import analyst, cms, config, crosswalk, render, validate
 from atlas.agents import COHORT_RETRIEVER, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
 from atlas.context import RecordToolCalls, RequestContext
 from atlas.schemas import CohortSpec, Finding, Gap, Report, ResearchTask
@@ -25,7 +26,6 @@ MIN_ROUND_S = 30  # do not start a round with less than this left after the writ
 
 async def _deterministic_spec(c: RequestContext, message: str) -> CohortSpec | None:
     """Fallback when the Retriever fails: build the cohort from crosswalk hints only."""
-    from atlas import cms
     hospitals = (await cms.general_info_ny(c.client)).rows
     d = crosswalk.detect(message, hospitals)
     by_name = {h.name: h.ccn for h in hospitals}
@@ -56,7 +56,6 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
         spec = await _deterministic_spec(c, request)
     if spec is None:
         return err("could not build a cohort", "ask the user for a hospital name, county or condition")
-    from atlas import cms
     hospitals = (await cms.general_info_ny(c.client)).rows
     names = {h.ccn: h.name for h in hospitals}
     if not spec.focus_ccns:  # "Bronx hospitals vs the rest of NY": the named region is the focus even if the cohort is statewide
@@ -73,6 +72,7 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
 
 def _partial(task: ResearchTask, agent_name: str, c: RequestContext, reason: str) -> Finding:
     """A finding for a researcher that timed out or failed: keep any tables it managed to store."""
+    c.partials.append(f"{task.kind} task {task.id} ({agent_name}) did not finish: {reason}")
     tables = [t.id for t in c.tables.all() if t.meta.get("owner") == agent_name]
     sources = sorted({s for t in c.tables.all() if t.meta.get("owner") == agent_name for s in t.meta.get("source_ids", [])})
     return Finding(task_id=task.id, status="partial", agent=agent_name, table_handles=tables, source_ids=sources,
@@ -84,6 +84,11 @@ async def _run_one(c: RequestContext, task: ResearchTask, name: str, timeout: fl
     agent, key = RESEARCHERS[task.kind]
     child = c.child(name)
     try:
+        fault = os.environ.get("ATLAS_FAULT", "")  # test/eval switch: break every cost researcher
+        if fault and task.kind == "cost":
+            if fault == "timeout":
+                raise asyncio.TimeoutError
+            raise RuntimeError("injected fault")
         result = await asyncio.wait_for(
             Runner.run(agent.clone(name=name), task.model_dump_json(), context=child, hooks=HOOKS, max_turns=MAX_TURNS[key]), timeout)
         finding = Finding.model_validate_json(result.final_output)
@@ -96,14 +101,15 @@ async def _run_one(c: RequestContext, task: ResearchTask, name: str, timeout: fl
 
 @tool
 async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: list[ResearchTask]) -> str:
-    """Send 2-4 research tasks to researchers who work IN PARALLEL, each with a fresh context. Returns their findings.
+    """Send research tasks to researchers who work IN PARALLEL, each with a fresh context. Round 1: 3-4 tasks. Gap rounds: 1-4 tasks. Returns findings, analysed facts_count and gaps.
 
     Args:
         tasks: The tasks. kind is "cost" (DRG payments, needs drg_codes) or "quality" (needs measure_ids such as READM-30-HF-HRRP or MORT_30_HF, or ask about patient experience in the question). Every task needs the cohort_handle from resolve_cohort.
     """
     c = ctx.context
-    if not 2 <= len(tasks) <= 4:
-        return err(f"{len(tasks)} tasks given", "dispatch 2 to 4 tasks per round, ideally 3: cost, quality outcomes, patient experience/safety")
+    low = 3 if c.rounds_used == 0 else 1  # first round fans out wide; gap rounds can be a single targeted task
+    if not low <= len(tasks) <= 4:
+        return err(f"{len(tasks)} tasks given", "round 1 needs 3 or 4 tasks: cost, quality outcomes, patient experience/safety" if low == 3 else "a gap round takes 1 to 4 tasks")
     if c.rounds_used >= 1 + config.MAX_GAP_ROUNDS:
         return err("round limit reached", "no more research rounds: call write_report with what you have")
     if c.remaining() < config.WRITER_RESERVE_S + MIN_ROUND_S:
@@ -178,16 +184,56 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     return await compose(c, c.question, reason)
 
 
+CLARIFY_FALLBACK = {"question": "Which part of New York hospital care should I look at?",
+                    "options": ["Cost of a procedure (for example hip or knee replacement)", "Quality for a condition (for example heart failure readmissions)",
+                                "A specific hospital or borough (for example the Bronx)", "Both cost and quality for one condition"]}
+
+
+def clarification_text(question: str, options: list[str]) -> str:
+    return "## " + question.strip() + "\n\n" + "\n".join(f"- {o}" for o in options[:4]) + "\n\nReply with one of these, or tell me the hospital, condition and region you care about."
+
+
+@tool
+async def ask_clarifying_question(ctx: RunContextWrapper[RequestContext], question: str, options: list[str]) -> str:
+    """Ask the user ONE clarifying question instead of researching. Only for requests too vague to research (no condition, procedure, hospital or region). Always the last call.
+
+    Args:
+        question: One short question.
+        options: 3 or 4 concrete answers the user can pick, each mentioning a condition or procedure, a region, or cost versus quality.
+    """
+    c = ctx.context
+    if c.prev_clarified:
+        return err("already asked", "do not ask again: choose a reasonable scope (statewide, the most common DRG) and call resolve_cohort")
+    if c.rounds_used > 0:
+        return err("research already started", "call write_report")
+    if len(options) < 3:
+        return err("need 3 or 4 options", "give concrete options: a condition or procedure, a region, cost versus quality")
+    c.clarified = True
+    return clarification_text(question, options)
+
+
+LEAD_COMMON = """You are Hospital Atlas, a research lead for New York hospital cost and quality (Medicare data, CMS). Only New York hospitals exist in your data. Never invent numbers; you do not write the answer text."""
+
 LEAD = Agent(
     name="Lead",
-    instructions="""You are Hospital Atlas, a research lead for New York hospital cost and quality (Medicare data, CMS). Work in this order:
-1. Call resolve_cohort once with the user's request.
-2. Call dispatch_researchers once with three tasks (ids R1, R2, R3) using the returned cohort_handle: (a) kind "cost" with the drg_codes, (b) kind "quality" with the readmission and mortality/complication measure_ids, (c) kind "quality" about patient experience and patient-safety indicators (PSI_* ids if any). If there are no drg_codes, use two quality tasks and one cost task for the DRGs you think fit, taken from find results only.
-3. Call write_report with no arguments. It writes, checks and cites the report itself; you never write the answer text.
-If the question is not about New York hospital cost or quality (another state, an unsupported topic), skip the research and call write_report with reason set to one plain sentence.
-Never invent numbers. Only New York hospitals exist in your data.""",
+    instructions=LEAD_COMMON + """ Work in this order:
+1. Call resolve_cohort once with the user's request (include any condition and region from earlier in the conversation).
+2. Call dispatch_researchers ONCE with exactly three tasks (ids R1, R2, R3) using the returned cohort_handle:
+   R1 kind "cost" with the drg_codes; R2 kind "quality" with the readmission and mortality/complication measure_ids; R3 kind "quality" about patient experience and patient-safety indicators (PSI_* ids if any are in measure_ids).
+   Example task: {"id":"R1","kind":"cost","question":"Average Medicare payment by hospital for DRG 291","cohort_handle":"C1","drg_codes":[291],"measure_ids":[]}.
+   If resolve_cohort gave no drg_codes, still send the three tasks, choosing DRGs only from find results.
+3. Read the result. If it lists gaps with fillable true and a suggested_task, and rounds_left is above 0, call dispatch_researchers again with ONLY those suggested tasks (one to three, new ids R4, R5...). Do this at most twice. Do not repeat a task. Unfillable gaps are not retried: the report states them.
+4. Call write_report with no arguments. It writes, checks and cites the report; you never write the answer.
+If the question is not about New York hospital cost or quality (another state, an unsupported topic) call write_report with reason set to one plain sentence, without researching. Never call ask_clarifying_question in this mode.""",
     model=config.MODEL, model_settings=TOOL_SETTINGS, tools=[resolve_cohort, dispatch_researchers, write_report],
     tool_use_behavior=StopAtTools(stop_at_tool_names=["write_report"]), reset_tool_choice=False,
+)
+
+LEAD_CLARIFY = Agent(
+    name="Lead",
+    instructions=LEAD_COMMON + """ The user's request is too vague to research (no condition, procedure, hospital or region). Call ask_clarifying_question once with a short question and 3 or 4 concrete options, for example a procedure's cost in a region, a condition's quality, or comparing named hospitals.""",
+    model=config.MODEL, model_settings=TOOL_SETTINGS, tools=[ask_clarifying_question],
+    tool_use_behavior=StopAtTools(stop_at_tool_names=["ask_clarifying_question"]), reset_tool_choice=False,
 )
 
 
@@ -200,8 +246,57 @@ class Answer:
     ctx: RequestContext
 
 
+_CLARIFIED: dict[str, bool] = {}  # session id -> the last assistant turn was a clarification (one instance, so in-memory is enough)
+
+
+def _hints(d: crosswalk.Detected) -> str:
+    bits = []
+    if d.condition:
+        bits.append(f"condition={d.condition}")
+    if d.region:
+        bits.append(f"region={d.region}")
+    if d.out_of_scope:
+        bits.append("outside New York: " + ", ".join(d.out_of_scope))
+    return f"\n\n[system hints: {'; '.join(bits)}]" if bits else ""
+
+
+async def _rescue(ctx: RequestContext, reason: str, write: bool) -> str:
+    """The safety net: whatever happened, return something honest built from what was gathered. Never raises."""
+    try:
+        if ctx.tables.all() and not ctx.facts:
+            await asyncio.wait_for(analyst.analyze(ctx), 10)
+        if ctx.facts:
+            if write:
+                return await asyncio.wait_for(compose(ctx, ctx.question), config.WRITER_RESERVE_S)
+            return render.render_partial(ctx, reason)
+    except Exception:
+        if ctx.facts:
+            return render.render_partial(ctx, reason)
+    return "I could not finish that request (" + reason + ").\n\n" + clarification_text(**CLARIFY_FALLBACK)
+
+
+async def _run_lead(ctx: RequestContext, message: str, session_id: str) -> str:
+    session = SQLiteSession(session_id, config.SESSIONS_DB)
+    first_turn = not await session.get_items(limit=1)
+    hospitals = (await cms.general_info_ny(ctx.client)).rows
+    d = crosswalk.detect(message, hospitals)
+    vague = first_turn and d.vague and not d.out_of_scope and not ctx.prev_clarified
+    result = await Runner.run(LEAD_CLARIFY if vague else LEAD, message + _hints(d), context=ctx, hooks=HOOKS, session=session, max_turns=8)
+    if vague and not ctx.clarified:
+        ctx.clarified = True
+        return clarification_text(**CLARIFY_FALLBACK)
+    return str(result.final_output)
+
+
 async def answer(message: str, session_id: str, client=None) -> Answer:
     ctx = RequestContext(client=client)
     ctx.question = message
-    result = await Runner.run(LEAD, message, context=ctx, hooks=HOOKS, session=SQLiteSession(session_id, config.SESSIONS_DB), max_turns=8)
-    return Answer(str(result.final_output), ctx.tool_calls, ctx)
+    ctx.prev_clarified = _CLARIFIED.get(session_id, False)
+    try:
+        text = await asyncio.wait_for(_run_lead(ctx, message, session_id), config.REQUEST_S)
+    except asyncio.TimeoutError:
+        text = await _rescue(ctx, "the time limit was reached", write=False)
+    except Exception as exc:
+        text = await _rescue(ctx, f"{type(exc).__name__} in the research loop", write=ctx.remaining() > config.WRITER_RESERVE_S)
+    _CLARIFIED[session_id] = ctx.clarified
+    return Answer(text, ctx.tool_calls, ctx)
