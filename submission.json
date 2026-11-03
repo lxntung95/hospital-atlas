@@ -1,5 +1,5 @@
 {
-  "deploy_url": "TODO-set-after-first-cloud-run-deploy",
+  "deploy_url": "https://hospital-atlas-git-622869374309.us-east1.run.app",
   "authors": ["ant2150"],
   "path": "research"
 }
