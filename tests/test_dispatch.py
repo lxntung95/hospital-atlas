@@ -67,14 +67,14 @@ async def test_partial_keeps_tables_stored_before_failure(ctx, monkeypatch):
         raise RuntimeError("late failure")
 
     stub_run(monkeypatch, work)
-    out = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2)]))
+    out = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
     assert all(f["status"] == "partial" and len(f["table_handles"]) == 1 for f in out["findings"])
 
 
 async def test_validation_errors(ctx, monkeypatch):
     prepare(ctx)
     stub_run(monkeypatch, lambda a, c: asyncio.sleep(0))
-    assert "error" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1)]))  # too few
+    assert "error" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2)]))  # round 1 needs 3
     assert "error" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(i) for i in range(5)]))  # too many
     bad = task(1) | {"cohort_handle": "C9"}
     assert "error" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[bad, task(2)]))
@@ -84,13 +84,14 @@ async def test_validation_errors(ctx, monkeypatch):
 async def test_round_cap_and_budget(ctx, monkeypatch):
     prepare(ctx)
     stub_run(monkeypatch, lambda a, c: asyncio.sleep(0))
-    for _ in range(1 + config.MAX_GAP_ROUNDS):
-        assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2)]))
-    r = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2)]))
+    assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
+    for _ in range(config.MAX_GAP_ROUNDS):  # gap rounds may be a single task
+        assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1)]))
+    r = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
     assert "round limit" in r["error"]
     ctx.rounds_used = 0
     ctx.budget_s = 10  # less than the writer reserve
-    assert "budget exhausted" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2)]))["error"]
+    assert "budget exhausted" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))["error"]
 
 
 async def test_hooks_record_agent_and_time(ctx):

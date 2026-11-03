@@ -92,6 +92,7 @@ def unmatched_numbers(text: str, pool: list[float]) -> list[str]:
 def caveats(ctx: RequestContext) -> list[str]:
     out = list(BASE_CAVEATS)
     out += [g.detail for g in ctx.gaps if not g.fillable]
+    out += [f"Partial result: {p}." for p in ctx.partials]
     seen, uniq = set(), []
     for c in out:
         if c not in seen:

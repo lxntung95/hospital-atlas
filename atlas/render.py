@@ -82,6 +82,8 @@ def audit_line(a: Audit) -> str:
 def render(v: Validated, ctx: RequestContext) -> str:
     r = v.report
     out = [f"## {r.headline}"]
+    if ctx.partials:
+        out.append("_Partial report: " + "; ".join(ctx.partials) + "._")
     out += [c.text for c in r.claims]
     for block in (rank_table(ctx), quadrant_table(ctx)):
         if block:
@@ -99,6 +101,8 @@ def render(v: Validated, ctx: RequestContext) -> str:
 def render_partial(ctx: RequestContext, reason: str) -> str:
     """Whatever the analysis has, no model involved. Never raises, works with zero facts."""
     out = ["## Partial results", f"This answer is incomplete: {reason}"]
+    if ctx.partials:
+        out.append("; ".join(ctx.partials))
     keep = [f for f in ctx.facts if f.unit in ("usd", "ratio", "pct", "stars", "text") and ".cohort_" not in f.key or f.key.endswith(("state_avg", "national_avg"))][:15]
     if keep:
         out.append("\n".join(f"- {f.label}: {f.display} {_marks(f.source_ids)}".rstrip() for f in keep))

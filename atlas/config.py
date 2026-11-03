@@ -1,6 +1,8 @@
 """One place for settings: model, budgets, dataset ids, cache TTL, per-host limits."""
 
+import asyncio
 import os
+import weakref
 from pathlib import Path
 
 from agents import ModelSettings
@@ -13,8 +15,28 @@ FALLBACK_DIR = DATA_DIR / "fallback"
 # --- Model ---
 
 MODEL_ID = os.environ.get("ATLAS_MODEL", "vertex_ai/gemini-3.5-flash-lite")
-MODEL = LitellmModel(model=MODEL_ID, api_key="unused")  # api_key unused: Vertex uses gcloud credentials
-SETTINGS = ModelSettings(extra_args={"vertex_location": "global"})  # Google routes each call to any region with capacity
+MODEL_CALLS = 4  # at most this many concurrent model calls per process (Vertex 429s otherwise)
+_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _gate() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    if loop not in _gates:
+        _gates[loop] = asyncio.Semaphore(MODEL_CALLS)
+    return _gates[loop]
+
+
+class LimitedModel(LitellmModel):
+    """LitellmModel with a process-wide cap on concurrent calls."""
+
+    async def get_response(self, *args, **kwargs):
+        async with _gate():
+            return await super().get_response(*args, **kwargs)
+
+
+MODEL = LimitedModel(model=MODEL_ID, api_key="unused")  # api_key unused: Vertex uses gcloud credentials
+# vertex_location global: Google routes each call to any region with capacity. timeout/num_retries are passed to litellm.acompletion.
+SETTINGS = ModelSettings(extra_args={"vertex_location": "global", "timeout": 45, "num_retries": 2})
 
 # --- Research budgets (seconds) and loop caps ---
 
