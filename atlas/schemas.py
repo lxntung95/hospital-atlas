@@ -1,0 +1,40 @@
+"""Pydantic schemas passed between agents. (Re-exported from atlas.agents.)"""
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class ResearchTask(BaseModel):
+    id: str = Field(description="Short id for this task, e.g. R1")
+    kind: Literal["cost", "quality"] = Field(description="cost -> Cost Researcher; quality -> Quality Researcher")
+    question: str = Field(description="What this researcher should find out, in one or two sentences")
+    cohort_handle: str = Field(description="Cohort handle from resolve_cohort, e.g. C1")
+    drg_codes: list[int] = Field(default_factory=list, description="DRG codes to look at (cost tasks)")
+    measure_ids: list[str] = Field(default_factory=list, description="Measure ids to look at (quality tasks), e.g. READM-30-HF-HRRP, MORT_30_HF")
+
+
+class CohortSpec(BaseModel):
+    cohort_handle: str
+    hospital_ccns: list[str]
+    focus_ccns: list[str] = Field(default_factory=list)
+    drg_codes: list[int] = Field(default_factory=list)
+    measure_ids: list[str] = Field(default_factory=list)
+    region_label: str = ""
+    unresolved: list[str] = Field(default_factory=list)
+
+
+class Gap(BaseModel):
+    kind: Literal["missing_metric", "small_n", "no_benchmark", "unresolved_entity", "period_mismatch"]
+    detail: str
+    fillable: bool = False
+
+
+class Finding(BaseModel):
+    task_id: str
+    status: Literal["ok", "partial", "failed"] = "ok"
+    agent: str = ""
+    table_handles: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    summary: str = ""
+    gaps: list[Gap] = Field(default_factory=list)
