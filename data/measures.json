@@ -1,0 +1,236 @@
+{
+ "READM-30-HIP-KNEE-HRRP": {
+  "name": "30-day readmission, hip/knee replacement (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "READM-30-HF-HRRP": {
+  "name": "30-day readmission, heart failure (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "READM-30-PN-HRRP": {
+  "name": "30-day readmission, pneumonia (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "READM-30-AMI-HRRP": {
+  "name": "30-day readmission, heart attack (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "READM-30-COPD-HRRP": {
+  "name": "30-day readmission, COPD (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "READM-30-CABG-HRRP": {
+  "name": "30-day readmission, CABG (HRRP excess readmission ratio)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "HRRP",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Higher than expected / than national means worse."
+ },
+ "COMP_HIP_KNEE": {
+  "name": "Complication rate, hip/knee replacement",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "Hybrid_HWM": {
+  "name": "Hybrid hospital-wide all-cause 30-day mortality",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_AMI": {
+  "name": "30-day death rate, heart attack",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_CABG": {
+  "name": "30-day death rate, CABG",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_COPD": {
+  "name": "30-day death rate, COPD",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_HF": {
+  "name": "30-day death rate, heart failure",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_PN": {
+  "name": "30-day death rate, pneumonia",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "MORT_30_STK": {
+  "name": "30-day death rate, stroke",
+  "direction": "lower_is_better",
+  "unit": "percent",
+  "dataset": "Complications and Deaths",
+  "has_ci": false,
+  "has_compared_to_national": false,
+  "meaning": "Lower is better; compare to the national rate (direction only: no confidence interval published)."
+ },
+ "PSI_03": {
+  "name": "Pressure ulcer rate",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_04": {
+  "name": "Death rate among surgical patients with serious treatable complications",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_06": {
+  "name": "Collapsed lung due to medical treatment",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_08": {
+  "name": "In-hospital fall with hip fracture",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_09": {
+  "name": "Postoperative hemorrhage or hematoma",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_10": {
+  "name": "Postoperative acute kidney injury requiring dialysis",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_11": {
+  "name": "Postoperative respiratory failure",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_12": {
+  "name": "Perioperative pulmonary embolism or deep vein thrombosis",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_13": {
+  "name": "Postoperative sepsis",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_14": {
+  "name": "Postoperative wound dehiscence",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_15": {
+  "name": "Abdominopelvic accidental puncture or laceration",
+  "direction": "lower_is_better",
+  "unit": "per 1,000",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ },
+ "PSI_90": {
+  "name": "Overall patient safety composite (lower is better)",
+  "direction": "lower_is_better",
+  "unit": "ratio",
+  "dataset": "Complications and Deaths",
+  "has_ci": true,
+  "has_compared_to_national": true,
+  "meaning": "CMS publishes a confidence interval and a comparison to the national rate."
+ }
+}
