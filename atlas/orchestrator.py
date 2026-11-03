@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from agents import Agent, RunContextWrapper, Runner, SQLiteSession
 from agents.agent import StopAtTools
 
-from atlas import config, crosswalk
+from atlas import analyst, config, crosswalk
 from atlas.agents import COHORT_RETRIEVER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
 from atlas.context import RecordToolCalls, RequestContext
 from atlas.schemas import CohortSpec, Finding, Gap, ResearchTask
@@ -113,7 +113,14 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
         c.counters["researchers"] += 1
         names.append(f"{t.kind.title()} Researcher R{c.counters['researchers']}")
     findings = await asyncio.gather(*(_run_one(c, t, n, timeout) for t, n in zip(tasks, names)))
+    try:
+        analysis = await analyst.analyze(c)
+        gaps = [g.model_dump() for g in analysis.gaps]
+    except Exception as e:  # the analysis must never sink the request
+        c.record("Analyst", "analyze", {}, f"failed: {type(e).__name__}: {e}")
+        analysis, gaps = None, []
     return ok(round=c.rounds_used, rounds_left=1 + config.MAX_GAP_ROUNDS - c.rounds_used,
+              facts_count=len(analysis.facts) if analysis else 0, gaps=gaps,
               findings=[f.model_dump(exclude={"gaps"}) | {"gaps": [g.detail for g in f.gaps]} for f in findings],
               tables=[{"handle": t.id, "title": t.title, "rows": len(t.rows)} for t in c.tables.all()])
 

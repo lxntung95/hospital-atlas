@@ -28,6 +28,7 @@ class Gap(BaseModel):
     kind: Literal["missing_metric", "small_n", "no_benchmark", "unresolved_entity", "period_mismatch"]
     detail: str
     fillable: bool = False
+    suggested_task: dict | None = None  # for fillable gaps: {"kind": "cost", "drg_codes": [..]} or {"kind": "quality", "measure_ids": [..]}
 
 
 class Finding(BaseModel):
