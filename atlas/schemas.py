@@ -39,3 +39,16 @@ class Finding(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     summary: str = ""
     gaps: list[Gap] = Field(default_factory=list)
+
+
+class Claim(BaseModel):
+    text: str = Field(description="One to three sentences. Numbers appear only as the exact `display` strings of the facts you cite. End with the source markers, e.g. [S1].")
+    fact_ids: list[str] = Field(default_factory=list, description="Ids (F#) of every fact this claim uses")
+    source_ids: list[str] = Field(default_factory=list, description="Source ids (S#) for the claim")
+
+
+class Report(BaseModel):
+    headline: str = Field(description="One sentence that answers the question. No numbers unless copied from a fact display.")
+    claims: list[Claim] = Field(description="3 to 6 claims supporting the headline")
+    data_cannot_tell_you: list[str] = Field(description="At least 2 things this data cannot answer for this question")
+    followups: list[str] = Field(default_factory=list, description="Up to 3 follow-up questions the data could answer")

@@ -23,6 +23,7 @@ REQUEST_S = 240
 RESEARCHER_S = 60
 RETRIEVER_S = 30
 WRITER_RESERVE_S = 45
+WRITER_S = 30  # per Writer attempt (the repair attempt gets the remainder of the reserve)
 
 # --- Live data ---
 

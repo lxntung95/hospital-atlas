@@ -327,7 +327,8 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
         cut = statistics.median(pays) if pays else None
         for r in ranked[primary]:
             q, why = "insufficient data", ""
-            qv = None
+            qv, qd = None, ""
+            good = False
             if measure is None:
                 why = "no quality measure fetched for this condition"
             elif measure.startswith("READM"):
@@ -338,6 +339,7 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
                     why = f"fewer than {MIN_HRRP_CASES} readmission cases"
                 else:
                     qv, good = h["excess_readmission_ratio"], h["excess_readmission_ratio"] <= 1
+                    qd = fmt_ratio(qv)
             else:
                 o = out_by.get((r["ccn"], measure))
                 if not o or o["score"] is None or o["national_rate"] is None:
@@ -346,12 +348,13 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
                     why = f"denominator below {MIN_MORT_DENOM}"
                 else:
                     qv, good = o["score"], o["score"] <= o["national_rate"]
+                    qd = f"{qv:g}" if measure.startswith("PSI") else fmt_pct(qv)
             if qv is not None and (r["discharges"] or 0) < MIN_DISCHARGES:
-                qv, why = None, f"fewer than {MIN_DISCHARGES} Medicare discharges"
+                qv, qd, why = None, "", f"fewer than {MIN_DISCHARGES} Medicare discharges"
             if qv is not None:
                 q = ("lower cost" if r["avg_total_payment"] <= cut else "higher cost") + " / " + ("better quality" if good else "worse quality")
             out.quadrant.append({"ccn": r["ccn"], "name": r["name"], "drg": primary, "avg_total_payment": r["avg_total_payment"], "payment_display": fmt_usd(r["avg_total_payment"]),
-                                 "quality_measure": measure, "quality_value": qv, "quadrant": q, "reason": why, "focus": r["ccn"] in focus})
+                                 "quality_measure": measure, "quality_value": qv, "quality_display": qd, "quadrant": q, "reason": why, "focus": r["ccn"] in focus})
         if out.quadrant and measure:
             counts = {}
             for row in out.quadrant:
@@ -402,14 +405,22 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
     return out
 
 
+def _table_sources(result: Analysis, prefix: str) -> list[str]:
+    ids: list[str] = []
+    for f in result.facts:
+        if f.key.startswith(prefix) and (prefix or f.key.startswith(("cost.", "quality."))):
+            ids += [s for s in f.source_ids if s not in ids]
+    return ids
+
+
 async def analyze(ctx: RequestContext) -> Analysis:
     """Recompute everything from ctx.tables (idempotent), store Facts/Gaps on the context and the derived tables in the store."""
     hospitals = {h.ccn: h for h in (await cms.general_info_ny(ctx.client)).rows}
     result = analyze_tables(ctx, hospitals)
     ctx.facts, ctx.gaps = result.facts, result.gaps
     if result.rank:
-        ctx.tables.put("T_rank", f"Cohort ranking by average total payment, DRG {result.primary_drg}", result.rank, owner="Analyst", kind="rank")
+        ctx.tables.put("T_rank", f"Cohort ranking by average total payment, DRG {result.primary_drg}", result.rank, owner="Analyst", kind="rank", source_ids=_table_sources(result, "cost."))
     if result.quadrant:
-        ctx.tables.put("T_quadrant", f"Cost versus quality, DRG {result.primary_drg}", result.quadrant, owner="Analyst", kind="quadrant")
+        ctx.tables.put("T_quadrant", f"Cost versus quality, DRG {result.primary_drg}", result.quadrant, owner="Analyst", kind="quadrant", source_ids=_table_sources(result, ""))
     ctx.record("Analyst", "analyze", {}, f"{len(result.facts)} facts, {len(result.gaps)} gaps ({sum(g.fillable for g in result.gaps)} fillable)")
     return result
