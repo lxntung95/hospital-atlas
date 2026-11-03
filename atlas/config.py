@@ -5,7 +5,10 @@ import os
 import weakref
 from pathlib import Path
 
+from dataclasses import replace
+
 from agents import ModelSettings
+from openai.types.shared import Reasoning
 from agents.extensions.models.litellm_model import LitellmModel
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +40,36 @@ class LimitedModel(LitellmModel):
 MODEL = LimitedModel(model=MODEL_ID, api_key="unused")  # api_key unused: Vertex uses gcloud credentials
 # vertex_location global: Google routes each call to any region with capacity. timeout/num_retries are passed to litellm.acompletion.
 SETTINGS = ModelSettings(extra_args={"vertex_location": "global", "timeout": 45, "num_retries": 2})
+
+# Models the UI may choose. Each was verified through Vertex (global location) on 2026-11-03; others returned 404.
+MODEL_CHOICES = {
+    "vertex_ai/gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fastest)",
+    "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash",
+}
+if MODEL_ID not in MODEL_CHOICES:  # an ATLAS_MODEL override stays selectable
+    MODEL_CHOICES[MODEL_ID] = MODEL_ID
+DEFAULT_MODEL = MODEL_ID
+EFFORT_LEVELS = {"low": "Fast", "medium": "Balanced", "high": "Thorough"}
+DEFAULT_EFFORT = "low"  # measured on Q2: low 18 s, medium 68 s, high 67 s
+EXTRA_TURNS = {"low": 0, "medium": 0, "high": 2}  # Thorough lets each researcher use a couple more tool turns
+_models: dict[str, LimitedModel] = {MODEL_ID: MODEL}
+
+
+def build_model(model_id: str) -> LimitedModel:
+    """The only way a request-supplied model id becomes a model: it must be on the allowlist."""
+    if model_id not in MODEL_CHOICES:
+        raise ValueError(f"unknown model {model_id!r}; choose one of: {', '.join(MODEL_CHOICES)}")
+    if model_id not in _models:
+        _models[model_id] = LimitedModel(model=model_id, api_key="unused")
+    return _models[model_id]
+
+
+def effort_settings(base: ModelSettings, effort: str) -> ModelSettings:
+    """Copy of `base` with the reasoning effort for this request."""
+    if effort not in EFFORT_LEVELS:
+        raise ValueError(f"unknown effort {effort!r}; choose one of: {', '.join(EFFORT_LEVELS)}")
+    return replace(base, reasoning=Reasoning(effort=effort))
+
 
 # --- Research budgets (seconds) and loop caps ---
 

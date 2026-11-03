@@ -19,7 +19,23 @@ from atlas.tools import err, make_cohort, ok, tool
 
 HOOKS = RecordToolCalls()  # stateless: it writes into whichever request context the run carries
 RESEARCHERS = {"cost": (COST_RESEARCHER, "cost"), "quality": (QUALITY_RESEARCHER, "quality")}
-MIN_ROUND_S = 30  # do not start a round with less than this left after the writer reserve
+MIN_ROUND_S = 30
+
+
+def tuned(agent: Agent, c: RequestContext) -> Agent:
+    """The agent as configured for this request: chosen model and reasoning effort. Never mutates the shared agent."""
+    if c.model is None and not c.effort:
+        return agent
+    kw = {}
+    if c.model is not None:
+        kw["model"] = c.model
+    if c.effort:
+        kw["model_settings"] = config.effort_settings(agent.model_settings, c.effort)
+    return agent.clone(**kw)
+
+
+def turns(base: int, c: RequestContext) -> int:
+    return base + config.EXTRA_TURNS.get(c.effort, 0)  # do not start a round with less than this left after the writer reserve
 
 
 # ---------------------------------------------------------------- cohort
@@ -47,10 +63,11 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
         request: The user's request in their own words (include hospital names, region and condition).
     """
     c = ctx.context
+    c.stage("finding hospitals")
     spec = None
     try:
         result = await asyncio.wait_for(
-            Runner.run(COHORT_RETRIEVER, request, context=c.child("Cohort Retriever"), hooks=HOOKS, max_turns=MAX_TURNS["retriever"]), config.RETRIEVER_S)
+            Runner.run(tuned(COHORT_RETRIEVER, c), request, context=c.child("Cohort Retriever"), hooks=HOOKS, max_turns=turns(MAX_TURNS["retriever"], c)), config.RETRIEVER_S)
         spec = CohortSpec.model_validate_json(result.final_output)
     except Exception:
         spec = await _deterministic_spec(c, request)
@@ -90,7 +107,7 @@ async def _run_one(c: RequestContext, task: ResearchTask, name: str, timeout: fl
                 raise asyncio.TimeoutError
             raise RuntimeError("injected fault")
         result = await asyncio.wait_for(
-            Runner.run(agent.clone(name=name), task.model_dump_json(), context=child, hooks=HOOKS, max_turns=MAX_TURNS[key]), timeout)
+            Runner.run(tuned(agent, c).clone(name=name), task.model_dump_json(), context=child, hooks=HOOKS, max_turns=turns(MAX_TURNS[key], c)), timeout)
         finding = Finding.model_validate_json(result.final_output)
         return finding.model_copy(update={"task_id": task.id, "agent": name})
     except asyncio.TimeoutError:
@@ -118,12 +135,14 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
         if t.cohort_handle not in c.cohorts:
             return err(f"unknown cohort handle {t.cohort_handle!r}", f"known handles: {', '.join(c.cohorts) or 'none'}")
     c.rounds_used += 1
+    c.stage(f"researching (round {c.rounds_used}, {len(tasks)} researchers in parallel)")
     timeout = min(config.RESEARCHER_S, c.remaining() - config.WRITER_RESERVE_S)
     names = []
     for t in tasks:
         c.counters["researchers"] += 1
         names.append(f"{t.kind.title()} Researcher R{c.counters['researchers']}")
     findings = await asyncio.gather(*(_run_one(c, t, n, timeout) for t, n in zip(tasks, names)))
+    c.stage("analysing")
     try:
         analysis = await analyst.analyze(c)
         gaps = [g.model_dump() for g in analysis.gaps]
@@ -145,7 +164,7 @@ def _writer_input(c: RequestContext, question: str) -> dict:
 
 
 async def _write(c: RequestContext, payload: str) -> Report | None:
-    result = await Runner.run(WRITER, payload, context=c.child("Writer"), max_turns=2)
+    result = await Runner.run(tuned(WRITER, c), payload, context=c.child("Writer"), max_turns=2)
     out = result.final_output
     return out if isinstance(out, Report) else Report.model_validate_json(str(out))
 
@@ -155,6 +174,7 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
     if c.rounds_used == 0 or not c.facts:
         c.record("Writer", "render_scope" if reason else "render_partial", {"reason": reason}, "no researchers ran" if c.rounds_used == 0 else "no facts")
         return render.render_scope(c, reason) if reason or c.rounds_used == 0 else render.render_partial(c, "no figures were produced")
+    c.stage("writing and checking the report")
     payload = json.dumps(_writer_input(c, question))
     try:
         first = await asyncio.wait_for(_write(c, payload), config.WRITER_S)
@@ -167,6 +187,7 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
         return await asyncio.wait_for(_write(c, msg), max(10, config.WRITER_RESERVE_S - config.WRITER_S))
 
     v = await validate.validate(first, c, repair)
+    c.audit = {**asdict(v.audit), "violations": len(v.violations)}
     c.record("Writer", "validate", {}, f"{len(v.violations)} violations after {'repair' if v.audit.repaired else 'first draft'}; audit clean={v.audit.clean}")
     return render.render(v, c)
 
@@ -281,22 +302,50 @@ async def _run_lead(ctx: RequestContext, message: str, session_id: str) -> str:
     hospitals = (await cms.general_info_ny(ctx.client)).rows
     d = crosswalk.detect(message, hospitals)
     vague = first_turn and d.vague and not d.out_of_scope and not ctx.prev_clarified
-    result = await Runner.run(LEAD_CLARIFY if vague else LEAD, message + _hints(d), context=ctx, hooks=HOOKS, session=session, max_turns=8)
+    result = await Runner.run(tuned(LEAD_CLARIFY if vague else LEAD, ctx), message + _hints(d), context=ctx, hooks=HOOKS, session=session, max_turns=turns(8, ctx))
     if vague and not ctx.clarified:
         ctx.clarified = True
         return clarification_text(**CLARIFY_FALLBACK)
     return str(result.final_output)
 
 
-async def answer(message: str, session_id: str, client=None) -> Answer:
+HISTORY_MAX = 12
+
+
+async def seed_history(session: SQLiteSession, history: list[dict]) -> int:
+    """Restore a saved chat into an empty session so the Lead continues coherently. Returns the number of items added."""
+    if await session.get_items(limit=1):
+        return 0  # never overwrite a live conversation
+    items = [{"role": h["role"], "content": str(h["content"])[:4000]} for h in history[-HISTORY_MAX:] if h.get("role") in ("user", "assistant") and h.get("content")]
+    if items:
+        await session.add_items(items)
+    return len(items)
+
+
+async def answer(message: str, session_id: str, client=None, model_id: str | None = None, effort: str | None = None,
+                 history: list[dict] | None = None, on_start=None) -> Answer:
+    """model_id / effort must already be validated by the caller (config.build_model raises on unknown ids)."""
     ctx = RequestContext(client=client)
     ctx.question = message
     ctx.prev_clarified = _CLARIFIED.get(session_id, False)
+    if model_id:
+        ctx.model, ctx.model_id = config.build_model(model_id), model_id
+    ctx.effort = effort or ""
+    if on_start:
+        on_start(ctx)
     try:
+        if history:
+            await seed_history(SQLiteSession(session_id, config.SESSIONS_DB), history)
+            ctx.prev_clarified = ctx.prev_clarified or (history[-1].get("role") == "assistant" and "Reply with one of these" in str(history[-1].get("content")))
         text = await asyncio.wait_for(_run_lead(ctx, message, session_id), config.REQUEST_S)
     except asyncio.TimeoutError:
         text = await _rescue(ctx, "the time limit was reached", write=False)
     except Exception as exc:
         text = await _rescue(ctx, f"{type(exc).__name__} in the research loop", write=ctx.remaining() > config.WRITER_RESERVE_S)
     _CLARIFIED[session_id] = ctx.clarified
+    try:
+        hospitals = {h.ccn: h for h in (await cms.general_info_ny(ctx.client)).rows}
+        ctx.artifacts = render.build_artifacts(ctx, hospitals)
+    except Exception:
+        ctx.artifacts = None
     return Answer(text, ctx.tool_calls, ctx)
