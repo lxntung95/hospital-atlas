@@ -47,3 +47,7 @@ HRRP = "9n3s-kdb3"
 COMPLICATIONS = "ynj2-r877"
 COMPLICATIONS_NATIONAL = "qqw3-t4ie"
 HCAHPS = "dgck-syfz"
+
+# --- Sessions ---
+
+SESSIONS_DB = "conversations.db"  # in memory on Cloud Run, so it lasts as long as the instance (we run one instance)
