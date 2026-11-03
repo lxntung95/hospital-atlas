@@ -9,3 +9,8 @@ __pycache__/
 
 # os / editor
 .DS_Store
+
+# local state
+conversations.db*
+.vscode/
+spike.py
