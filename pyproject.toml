@@ -2,7 +2,7 @@
 name = "hospital-atlas"
 version = "0.1.0"
 description = "Multi-agent deep research over public CMS hospital data: OpenAI Agents SDK + Gemini, with cited reports"
-requires-python = ">=3.12"  # Cloud Run's buildpack reads .python-version; 3.12 matches viral-pulse
+requires-python = ">=3.12"  # Cloud Run's buildpack reads .python-version; its runtime list has 3.13+ only (3.12 fails the build)
 dependencies = [
     "fastapi>=0.109.0",                # the web server
     "uvicorn>=0.27.0",                 # runs it
