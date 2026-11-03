@@ -73,7 +73,7 @@ async def show_errors_in_chat(request: Request, exc: Exception):
 
 @app.get("/")
 async def index():
-    return FileResponse(Path(__file__).parent / "index.html")
+    return FileResponse(Path(__file__).parent / "web" / "index.html")
 
 
 @app.get("/health")

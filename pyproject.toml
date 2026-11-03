@@ -11,3 +11,8 @@ dependencies = [
     "google-cloud-aiplatform>=1.40.0", # Vertex AI auth for Gemini (older docs still call it Vertex AI)
     "httpx>=0.27",                     # async HTTP client for the CMS and PubMed APIs
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",  # fast offline tests in tests/ (no model calls)
+]
