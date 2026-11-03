@@ -1,5 +1,8 @@
 """Markdown rendering. No number is formatted here: every figure comes from a Fact display or a derived-table display column."""
 
+import json
+
+from atlas.config import DATA_DIR
 from atlas.context import RequestContext
 from atlas.validate import Audit, Validated, caveats
 
@@ -126,3 +129,61 @@ def render_scope(ctx: RequestContext, reason: str) -> str:
     out.append(cannot_section(caveats(ctx)))
     out.append(sources_section(ctx))
     return "\n\n".join(out)
+
+
+# ---------------------------------------------------------------- structured artifacts for the UI
+
+_CENTROIDS: dict | None = None
+
+
+def zip_centroids() -> dict:
+    global _CENTROIDS
+    if _CENTROIDS is None:
+        try:
+            _CENTROIDS = json.loads((DATA_DIR / "ny_zip_centroids.json").read_text())
+        except (OSError, ValueError):
+            _CENTROIDS = {}
+    return _CENTROIDS
+
+
+def _stored(ctx: RequestContext, table_id: str):
+    try:
+        return ctx.tables.get(table_id)
+    except KeyError:
+        return None
+
+
+def build_artifacts(ctx: RequestContext, hospitals: dict) -> dict:
+    """Everything the evidence panel draws, from the stored tables and Facts only. `hospitals`: ccn -> cms.Hospital."""
+    cents = zip_centroids()
+    rank, quad = _stored(ctx, "T_rank"), _stored(ctx, "T_quadrant")
+    q_by = {r["ccn"]: r for r in (quad.rows if quad else [])}
+    cohort = []
+    for r in (rank.rows if rank else []):
+        h = hospitals.get(r["ccn"])
+        z = (h.zip or "")[:5] if h else ""
+        ll = cents.get(z)
+        q = q_by.get(r["ccn"], {})
+        cohort.append({"ccn": r["ccn"], "name": r["name"], "city": r["city"], "zip": z, "lat": ll[0] if ll else None, "lon": ll[1] if ll else None,
+                       "rank": r["rank"], "discharges": r["discharges"], "avg_total_payment": r["avg_total_payment"], "payment_display": r["payment_display"],
+                       "quadrant": q.get("quadrant", ""), "small_n": r["small_n"], "focus": r["focus"]})
+    primary = rank.rows[0]["drg"] if rank and rank.rows else None
+    fact_by = {f.key: f for f in ctx.facts}
+
+    def bench(level: str):
+        f = fact_by.get(f"cost.drg{primary}.{level}_avg")
+        return {"value": f.value, "display": f.display, "source_ids": f.source_ids} if f else None
+
+    shown = (rank.rows[:15] + [r for r in rank.rows[15:] if r["focus"]]) if rank else []
+    charts = {
+        "payment_bars": {"drg": primary, "items": [{"ccn": r["ccn"], "name": r["name"], "value": r["avg_total_payment"], "display": r["payment_display"], "focus": r["focus"], "small_n": r["small_n"]} for r in shown],
+                         "references": {"ny": bench("state"), "national": bench("national")}},
+        "cost_quality_scatter": {"measure": next((r["quality_measure"] for r in (quad.rows if quad else []) if r["quality_measure"]), None),
+                                 "points": [{"ccn": r["ccn"], "name": r["name"], "x": r["avg_total_payment"], "x_display": r["payment_display"], "y": r["quality_value"], "y_display": r["quality_display"],
+                                             "quadrant": r["quadrant"], "focus": r["focus"]} for r in (quad.rows if quad else []) if r["quality_value"] is not None]},
+    }
+    tables = [{"id": t.id, "title": t.title, "columns": t.columns, "rows": t.rows} for t in (rank, quad) if t]
+    used = sorted({s for f in ctx.facts for s in f.source_ids}, key=lambda s: int(s[1:]))
+    sources = [{"id": s.id, "dataset": s.dataset, "period": s.period, "retrieved_at": s.retrieved_at, "url": s.url, "note": s.note} for s in (ctx.sources.get(i) for i in used) if s]
+    return {"cohort": cohort, "tables": tables, "charts": charts, "benchmarks": {"drg": primary, "ny": bench("state"), "national": bench("national")}, "sources": sources,
+            "facts": [{"id": f.id, "label": f.label, "display": f.display, "source_ids": f.source_ids, "caveats": f.caveats} for f in ctx.facts]}

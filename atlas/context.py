@@ -13,6 +13,14 @@ from atlas.store import TableStore
 
 
 @dataclass
+class RunState:
+    """What /progress reports about a request that is still running. Shared by reference with every child context."""
+
+    stage: str = "starting"
+    status: str = "running"  # running | done | error
+
+
+@dataclass
 class RequestContext:
     """Passed as `context=` to every Runner.run in a request. Mutable members are shared by reference."""
 
@@ -22,6 +30,12 @@ class RequestContext:
     tool_calls: list[dict] = field(default_factory=list)
     cohorts: dict[str, dict] = field(default_factory=dict)  # handle -> {"ccns": [...], "label": str}
     question: str = ""
+    run: RunState = field(default_factory=RunState)
+    model: object | None = None  # per-request LitellmModel (None -> the agents' own)
+    model_id: str = ""
+    effort: str = ""
+    audit: dict | None = None
+    artifacts: dict | None = None
     prev_clarified: bool = False  # the previous assistant turn in this conversation was a clarification question
     partials: list = field(default_factory=list)  # researcher tasks that timed out or failed this request
     clarified: bool = False  # this turn ended in one
@@ -36,6 +50,9 @@ class RequestContext:
     def child(self, owner: str) -> "RequestContext":
         """A view for one nested run: shares tables, sources, tool_calls and cohorts, but knows its owner."""
         return replace(self, owner=owner)
+
+    def stage(self, text: str) -> None:
+        self.run.stage = text
 
     def elapsed(self) -> float:
         return time.monotonic() - self.started
