@@ -147,7 +147,7 @@ class CmsClient:
 
     def _client(self) -> httpx.AsyncClient:
         if self._http is None:
-            self._http = httpx.AsyncClient(transport=self._transport, timeout=config.HTTP_TIMEOUT_S, headers={"User-Agent": config.USER_AGENT})
+            self._http = httpx.AsyncClient(transport=self._transport, timeout=config.HTTP_TIMEOUT_S)
         return self._http
 
     def _semaphore(self, url: str) -> asyncio.Semaphore:

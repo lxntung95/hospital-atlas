@@ -29,7 +29,7 @@ WRITER_RESERVE_S = 45
 STATE = "NY"  # the NY filter is a constant, never a tool parameter
 TTL_S = 6 * 3600  # whole-NY-slice cache lifetime
 HTTP_TIMEOUT_S = 20
-USER_AGENT = "hospital-atlas course project"  # generic on purpose: no personal contact details
+# No custom User-Agent: data.cms.gov rejected "hospital-atlas course project" with 403, so we send httpx's default.
 RETRY_DEGRADED_S = 60  # after a failed live fetch, serve the degraded copy this long before trying again
 RETRY_BACKOFF_S = (0.5, 1.5, 4.0)  # three retries
 HOST_CONCURRENCY = {"data.cms.gov": 4, "eutils.ncbi.nlm.nih.gov": 2}

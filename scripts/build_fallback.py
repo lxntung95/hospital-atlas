@@ -5,13 +5,16 @@ Re-run it whenever you want a fresher snapshot, then commit data/fallback/.
 """
 
 import asyncio
+import sys
 from pathlib import Path
 from tempfile import mkdtemp
 
-from atlas import cms
-from atlas.config import FALLBACK_DIR
-from atlas.crosswalk import crosswalk
-from atlas.http import CmsClient, save_fallback
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `atlas` imports when run as a script
+
+from atlas import cms  # noqa: E402
+from atlas.config import FALLBACK_DIR  # noqa: E402
+from atlas.crosswalk import crosswalk  # noqa: E402
+from atlas.http import CmsClient, save_fallback  # noqa: E402
 
 SPECS = [cms.GENERAL_INFO, cms.INPATIENT, cms.HRRP, cms.COMPLICATIONS, cms.NATIONAL, cms.HCAHPS_STAR]
 
