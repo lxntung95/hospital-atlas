@@ -1,21 +1,24 @@
+import asyncio
+import contextlib
 import json
 import uuid
 from pathlib import Path
 
 import uvicorn
-from agents import Agent, ModelSettings, RunHooks, Runner, SQLiteSession, set_tracing_disabled
-from agents.extensions.models.litellm_model import LitellmModel
+from agents import Agent, RunHooks, Runner, SQLiteSession, set_tracing_disabled
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from atlas import cms
+from atlas.config import MODEL, SETTINGS
+from atlas.http import get_client
+
 # Traces upload to OpenAI by default, which needs an OpenAI key. We're on Gemini.
 set_tracing_disabled(True)
 
-# --- Config ---
+# --- Config (model and settings live in atlas/config.py) ---
 
-MODEL = LitellmModel(model="vertex_ai/gemini-3.5-flash-lite", api_key="unused")  # api_key unused: Vertex uses gcloud credentials
-SETTINGS = ModelSettings(extra_args={"vertex_location": "global"})  # Google routes each call to any region with capacity
 SESSIONS_DB = "conversations.db"  # in memory on Cloud Run, so it lasts as long as the instance (we run one instance)
 
 # --- The Agent (M0 placeholder: the Lead and its researchers replace this) ---
@@ -47,7 +50,22 @@ class RecordToolCalls(RunHooks):
 
 # --- FastAPI App ---
 
-app = FastAPI()
+async def warm_cache():
+    """Fetch the NY slices in the background so the first question does not pay for them. Never blocks startup."""
+    for fetch in (cms.general_info_ny, cms.ny_inpatient, cms.hrrp_ny, cms.complications_ny, cms.complications_national, cms.hcahps_star_ny):
+        with contextlib.suppress(Exception):  # a failed warm-up just means the first request fetches (or falls back)
+            await fetch()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(warm_cache())
+    yield
+    task.cancel()
+    await get_client().aclose()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 class ChatRequest(BaseModel):
@@ -78,7 +96,7 @@ async def index():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "cache": get_client().status()}
 
 
 @app.post("/chat")

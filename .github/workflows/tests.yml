@@ -1,0 +1,18 @@
+# A check only: Cloud Run deploys independently from main through Developer Connect.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked
+      - run: uv run pytest -m "not network"  # offline: no CMS calls, no model calls
