@@ -10,10 +10,10 @@ from dataclasses import asdict, dataclass
 from agents import Agent, RunContextWrapper, Runner, SQLiteSession
 from agents.agent import StopAtTools
 
-from atlas import analyst, config, crosswalk
-from atlas.agents import COHORT_RETRIEVER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
+from atlas import analyst, config, crosswalk, render, validate
+from atlas.agents import COHORT_RETRIEVER, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
 from atlas.context import RecordToolCalls, RequestContext
-from atlas.schemas import CohortSpec, Finding, Gap, ResearchTask
+from atlas.schemas import CohortSpec, Finding, Gap, Report, ResearchTask
 from atlas.tools import err, make_cohort, ok, tool
 
 HOOKS = RecordToolCalls()  # stateless: it writes into whichever request context the run carries
@@ -57,7 +57,12 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
     if spec is None:
         return err("could not build a cohort", "ask the user for a hospital name, county or condition")
     from atlas import cms
-    names = {h.ccn: h.name for h in (await cms.general_info_ny(c.client)).rows}
+    hospitals = (await cms.general_info_ny(c.client)).rows
+    names = {h.ccn: h.name for h in hospitals}
+    if not spec.focus_ccns:  # "Bronx hospitals vs the rest of NY": the named region is the focus even if the cohort is statewide
+        _region, counties = crosswalk.find_region(request)
+        wanted = {x.casefold() for x in counties}
+        spec.focus_ccns = [h.ccn for h in hospitals if h.type == "Acute Care Hospitals" and h.county.casefold() in wanted and h.ccn in c.cohorts[spec.cohort_handle]["ccns"]][:12]
     c.cohorts[spec.cohort_handle]["spec"] = spec.model_dump()
     return ok(cohort_handle=spec.cohort_handle, n=len(spec.hospital_ccns), region_label=spec.region_label,
               focus_hospitals=[{"ccn": x, "name": names.get(x, x)} for x in spec.focus_ccns], drg_codes=spec.drg_codes,
@@ -125,14 +130,52 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
               tables=[{"handle": t.id, "title": t.title, "rows": len(t.rows)} for t in c.tables.all()])
 
 
+def _writer_input(c: RequestContext, question: str) -> dict:
+    facts = c.facts[:150]
+    return {"question": question,
+            "facts": [{"id": f.id, "label": f.label, "display": f.display, "sources": f.source_ids, "caveats": f.caveats} for f in facts],
+            "gaps": [{"kind": g.kind, "detail": g.detail} for g in c.gaps],
+            "sources": [{"id": s.id, "dataset": s.dataset, "period": s.period} for s in c.sources.all()]}
+
+
+async def _write(c: RequestContext, payload: str) -> Report | None:
+    result = await Runner.run(WRITER, payload, context=c.child("Writer"), max_turns=2)
+    out = result.final_output
+    return out if isinstance(out, Report) else Report.model_validate_json(str(out))
+
+
+async def compose(c: RequestContext, question: str, reason: str = "") -> str:
+    """Writer -> validate (repair once) -> render. Falls back to a model-free partial report; never returns unvalidated Writer text."""
+    if c.rounds_used == 0 or not c.facts:
+        c.record("Writer", "render_scope" if reason else "render_partial", {"reason": reason}, "no researchers ran" if c.rounds_used == 0 else "no facts")
+        return render.render_scope(c, reason) if reason or c.rounds_used == 0 else render.render_partial(c, "no figures were produced")
+    payload = json.dumps(_writer_input(c, question))
+    try:
+        first = await asyncio.wait_for(_write(c, payload), config.WRITER_S)
+    except Exception as exc:
+        c.record("Writer", "write", {}, f"failed: {type(exc).__name__}")
+        return render.render_partial(c, "the writer step failed, so these are the verified figures only")
+
+    async def repair(violations):
+        msg = payload + "\n\nYour previous draft had problems. Fix them and return the full report again:\n- " + "\n- ".join(violations[:12])
+        return await asyncio.wait_for(_write(c, msg), max(10, config.WRITER_RESERVE_S - config.WRITER_S))
+
+    v = await validate.validate(first, c, repair)
+    c.record("Writer", "validate", {}, f"{len(v.violations)} violations after {'repair' if v.audit.repaired else 'first draft'}; audit clean={v.audit.clean}")
+    return render.render(v, c)
+
+
 @tool
-async def write_report(ctx: RunContextWrapper[RequestContext], text: str) -> str:
-    """Finish with the final answer for the user. Always the last call.
+async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "") -> str:
+    """Finish: produce the final cited report for the user. Always the last call. Takes no text: the report is written from the analysed facts.
 
     Args:
-        text: The answer, in plain sentences, using only facts from the findings. Say what the data cannot tell you.
+        reason: Leave empty after dispatch_researchers. Only if the question cannot be answered from New York hospital data (other state, unsupported topic, nothing found), give a one-sentence reason instead of dispatching.
     """
-    return text
+    c = ctx.context
+    if c.rounds_used == 0 and not reason:
+        return err("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
+    return await compose(c, c.question, reason)
 
 
 LEAD = Agent(
@@ -140,7 +183,8 @@ LEAD = Agent(
     instructions="""You are Hospital Atlas, a research lead for New York hospital cost and quality (Medicare data, CMS). Work in this order:
 1. Call resolve_cohort once with the user's request.
 2. Call dispatch_researchers once with three tasks (ids R1, R2, R3) using the returned cohort_handle: (a) kind "cost" with the drg_codes, (b) kind "quality" with the readmission and mortality/complication measure_ids, (c) kind "quality" about patient experience and patient-safety indicators (PSI_* ids if any). If there are no drg_codes, use two quality tasks and one cost task for the DRGs you think fit, taken from find results only.
-3. Call write_report with a short answer built only from the findings: lead with the answer, name hospitals and numbers exactly as the findings give them, and finish with one sentence on what the data cannot tell you. If anything is unresolved or outside New York, say so plainly.
+3. Call write_report with no arguments. It writes, checks and cites the report itself; you never write the answer text.
+If the question is not about New York hospital cost or quality (another state, an unsupported topic), skip the research and call write_report with reason set to one plain sentence.
 Never invent numbers. Only New York hospitals exist in your data.""",
     model=config.MODEL, model_settings=TOOL_SETTINGS, tools=[resolve_cohort, dispatch_researchers, write_report],
     tool_use_behavior=StopAtTools(stop_at_tool_names=["write_report"]), reset_tool_choice=False,
@@ -158,5 +202,6 @@ class Answer:
 
 async def answer(message: str, session_id: str, client=None) -> Answer:
     ctx = RequestContext(client=client)
+    ctx.question = message
     result = await Runner.run(LEAD, message, context=ctx, hooks=HOOKS, session=SQLiteSession(session_id, config.SESSIONS_DB), max_turns=8)
     return Answer(str(result.final_output), ctx.tool_calls, ctx)

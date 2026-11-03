@@ -21,6 +21,7 @@ class RequestContext:
     sources: SourceRegistry = field(default_factory=SourceRegistry)
     tool_calls: list[dict] = field(default_factory=list)
     cohorts: dict[str, dict] = field(default_factory=dict)  # handle -> {"ccns": [...], "label": str}
+    question: str = ""
     facts: list = field(default_factory=list)  # filled by atlas.analyst.analyze
     gaps: list = field(default_factory=list)
     counters: dict[str, int] = field(default_factory=lambda: {"researchers": 0})
