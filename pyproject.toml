@@ -14,5 +14,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",  # fast offline tests in tests/ (no model calls)
+    "pytest>=8.0",           # fast offline tests in tests/ (no model calls)
+    "pytest-asyncio>=1.4",   # lets tests await the async HTTP client
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]  # so tests can import atlas without installing the project
+asyncio_mode = "auto"  # async tests run without a decorator
+asyncio_default_fixture_loop_scope = "function"
+markers = ["network: hits the live CMS APIs (deselect with -m 'not network')"]

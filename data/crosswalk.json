@@ -1,0 +1,157 @@
+{
+ "hip_knee_replacement": {
+  "label": "Hip and knee joint replacement",
+  "drgs": [
+   469,
+   470
+  ],
+  "hrrp_measure": "READM-30-HIP-KNEE-HRRP",
+  "mort_measure": null,
+  "comp_measure": "COMP_HIP_KNEE",
+  "psi": [
+   "PSI_09",
+   "PSI_12",
+   "PSI_90"
+  ],
+  "aliases": [
+   "hip replacement",
+   "knee replacement",
+   "joint replacement",
+   "hip and knee",
+   "hip/knee",
+   "knee surgery",
+   "hip surgery",
+   "total knee",
+   "total hip",
+   "arthroplasty"
+  ],
+  "notes": "DRG 469 = with major complication, 470 = without. No mortality measure published for this condition; the quality signal is the complication rate."
+ },
+ "heart_failure": {
+  "label": "Heart failure",
+  "drgs": [
+   291,
+   292
+  ],
+  "hrrp_measure": "READM-30-HF-HRRP",
+  "mort_measure": "MORT_30_HF",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "heart failure",
+   "chf",
+   "congestive heart failure"
+  ],
+  "notes": "DRG 291 = with MCC, 292 = with CC. NY CY2024 has no DRG 293."
+ },
+ "pneumonia": {
+  "label": "Pneumonia",
+  "drgs": [
+   193,
+   194,
+   195
+  ],
+  "hrrp_measure": "READM-30-PN-HRRP",
+  "mort_measure": "MORT_30_PN",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "pneumonia",
+   "lung infection"
+  ],
+  "notes": "DRG 193 = with MCC, 194 = with CC, 195 = without."
+ },
+ "heart_attack": {
+  "label": "Heart attack (acute myocardial infarction)",
+  "drgs": [
+   280,
+   281,
+   282
+  ],
+  "hrrp_measure": "READM-30-AMI-HRRP",
+  "mort_measure": "MORT_30_AMI",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "heart attack",
+   "ami",
+   "myocardial infarction"
+  ],
+  "notes": "DRGs 280-282 are discharged alive; 283-285 (expired) are not included."
+ },
+ "copd": {
+  "label": "COPD",
+  "drgs": [
+   190,
+   191,
+   192
+  ],
+  "hrrp_measure": "READM-30-COPD-HRRP",
+  "mort_measure": "MORT_30_COPD",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "copd",
+   "chronic obstructive",
+   "emphysema"
+  ],
+  "notes": "DRG 190 = with MCC, 191 = with CC, 192 = without."
+ },
+ "cabg": {
+  "label": "Coronary artery bypass graft (CABG)",
+  "drgs": [
+   231,
+   233,
+   234,
+   235,
+   236
+  ],
+  "hrrp_measure": "READM-30-CABG-HRRP",
+  "mort_measure": "MORT_30_CABG",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "cabg",
+   "bypass surgery",
+   "heart bypass",
+   "coronary bypass"
+  ],
+  "notes": "DRGs 231, 233-236 are the bypass families."
+ },
+ "stroke": {
+  "label": "Stroke",
+  "drgs": [
+   61,
+   62,
+   64,
+   65,
+   66
+  ],
+  "hrrp_measure": null,
+  "mort_measure": "MORT_30_STK",
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "stroke",
+   "cerebral infarction"
+  ],
+  "notes": "No HRRP readmission measure exists for stroke. DRGs 061-062 (ischemic with thrombolytic) and 064-066 (hemorrhage/infarction)."
+ },
+ "sepsis": {
+  "label": "Sepsis",
+  "drgs": [
+   870,
+   871,
+   872
+  ],
+  "hrrp_measure": null,
+  "mort_measure": null,
+  "comp_measure": null,
+  "psi": [],
+  "aliases": [
+   "sepsis",
+   "septicemia"
+  ],
+  "notes": "No condition-specific quality measure is published; cost only."
+ }
+}

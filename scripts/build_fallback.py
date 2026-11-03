@@ -1,0 +1,36 @@
+"""Build the last-known-good NY snapshot shipped in data/fallback/ (used only when the live CMS APIs fail).
+
+Run: uv run scripts/build_fallback.py
+Re-run it whenever you want a fresher snapshot, then commit data/fallback/.
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+from tempfile import mkdtemp
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `atlas` imports when run as a script
+
+from atlas import cms  # noqa: E402
+from atlas.config import FALLBACK_DIR  # noqa: E402
+from atlas.crosswalk import crosswalk  # noqa: E402
+from atlas.http import CmsClient, save_fallback  # noqa: E402
+
+SPECS = [cms.GENERAL_INFO, cms.INPATIENT, cms.HRRP, cms.COMPLICATIONS, cms.NATIONAL, cms.HCAHPS_STAR]
+
+
+async def main():
+    drgs = sorted({d for c in crosswalk().values() for d in c["drgs"]})
+    specs = SPECS + [cms.geo_spec(d) for d in drgs]
+    client = CmsClient(fallback_dir=Path(mkdtemp()))  # empty dir: if live fails we want the error, not a stale snapshot
+    total = 0
+    for spec in specs:
+        fetched = await client.get_slice(spec)
+        path = save_fallback(spec, fetched.rows, FALLBACK_DIR)
+        total += path.stat().st_size
+        print(f"{spec.name:28} {len(fetched.rows):6} rows  {path.stat().st_size / 1024:7.1f} KB")
+    print(f"total {total / 1024 / 1024:.2f} MB in {FALLBACK_DIR}")
+    await client.aclose()
+
+
+asyncio.run(main())

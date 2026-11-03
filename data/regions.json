@@ -1,0 +1,116 @@
+{
+ "regions": {
+  "New York City": [
+   "Bronx",
+   "Kings",
+   "New York",
+   "Queens",
+   "Richmond"
+  ],
+  "Long Island": [
+   "Nassau",
+   "Suffolk"
+  ],
+  "Hudson Valley": [
+   "Dutchess",
+   "Orange",
+   "Putnam",
+   "Rockland",
+   "Sullivan",
+   "Ulster",
+   "Westchester"
+  ],
+  "Capital Region": [
+   "Albany",
+   "Columbia",
+   "Greene",
+   "Rensselaer",
+   "Saratoga",
+   "Schenectady",
+   "Warren",
+   "Washington"
+  ],
+  "Mohawk Valley": [
+   "Fulton",
+   "Herkimer",
+   "Montgomery",
+   "Oneida",
+   "Otsego",
+   "Schoharie"
+  ],
+  "Central New York": [
+   "Cayuga",
+   "Cortland",
+   "Madison",
+   "Onondaga",
+   "Oswego"
+  ],
+  "Southern Tier": [
+   "Broome",
+   "Chemung",
+   "Chenango",
+   "Delaware",
+   "Schuyler",
+   "Steuben",
+   "Tioga",
+   "Tompkins"
+  ],
+  "Finger Lakes": [
+   "Genesee",
+   "Livingston",
+   "Monroe",
+   "Ontario",
+   "Orleans",
+   "Seneca",
+   "Wayne",
+   "Wyoming",
+   "Yates"
+  ],
+  "Western New York": [
+   "Allegany",
+   "Cattaraugus",
+   "Chautauqua",
+   "Erie",
+   "Niagara"
+  ],
+  "North Country": [
+   "Clinton",
+   "Essex",
+   "Franklin",
+   "Hamilton",
+   "Jefferson",
+   "Lewis",
+   "St. Lawrence"
+  ]
+ },
+ "aliases": {
+  "nyc": "New York City",
+  "new york city": "New York City",
+  "the city": "New York City",
+  "five boroughs": "New York City",
+  "long island": "Long Island",
+  "hudson valley": "Hudson Valley",
+  "capital": "Capital Region",
+  "capital region": "Capital Region",
+  "albany area": "Capital Region",
+  "western new york": "Western New York",
+  "wny": "Western New York",
+  "buffalo area": "Western New York",
+  "finger lakes": "Finger Lakes",
+  "rochester area": "Finger Lakes",
+  "central new york": "Central New York",
+  "cny": "Central New York",
+  "syracuse area": "Central New York",
+  "southern tier": "Southern Tier",
+  "north country": "North Country",
+  "mohawk valley": "Mohawk Valley"
+ },
+ "boroughs": {
+  "the bronx": "Bronx",
+  "bronx": "Bronx",
+  "brooklyn": "Kings",
+  "manhattan": "New York",
+  "queens": "Queens",
+  "staten island": "Richmond"
+ }
+}
