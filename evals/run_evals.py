@@ -15,6 +15,8 @@ import time
 import uuid
 from pathlib import Path
 
+from evals.common import auth_headers
+
 CASES = Path(__file__).with_name("cases.jsonl")
 
 
@@ -50,11 +52,8 @@ def check(name: str, text: str, calls: list[dict]) -> tuple[bool, str]:
         return cited <= listed and bool(listed), f"all {len(cited)} cited ids listed ({len(listed)} sources)"
     if kind == "parallel_researchers":
         rs = researcher_calls(calls)
-        names = []
-        for c in rs:
-            if c["agent"] not in names:
-                names.append(c["agent"])
         order = [c["agent"] for c in rs]
+        names = list(dict.fromkeys(order))
         # interleaved calls (A ... B ... A) can only happen if the runs overlap in time
         interleaved = any(order.index(a) < order.index(b) < len(order) - 1 - order[::-1].index(a) for a in names for b in names if a != b)
         return len(names) >= 3 and interleaved, f"{len(names)} researchers, interleaved={interleaved}"
@@ -76,8 +75,7 @@ async def run_local(turns, session_id):
 
 async def run_remote(turns, session_id, url, token):
     import httpx
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    async with httpx.AsyncClient(timeout=300, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=300, headers=auth_headers(token)) as client:
         for t in turns:
             r = await client.post(url.rstrip("/") + "/chat", json={"message": t["say"], "session_id": session_id})
             r.raise_for_status()
