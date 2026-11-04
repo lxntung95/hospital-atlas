@@ -52,3 +52,15 @@ class Report(BaseModel):
     claims: list[Claim] = Field(description="3 to 6 claims supporting the headline")
     data_cannot_tell_you: list[str] = Field(description="At least 2 things this data cannot answer for this question")
     followups: list[str] = Field(default_factory=list, description="Up to 3 follow-up questions the data could answer")
+
+
+class CritiqueTask(BaseModel):
+    kind: Literal["cost", "quality"]
+    drg_codes: list[int] = Field(default_factory=list, description="DRG codes (cost tasks)")
+    measure_ids: list[str] = Field(default_factory=list, description="Measure ids from the allowed list (quality tasks)")
+    why: str = Field(description="One sentence: what part of the question this would answer")
+
+
+class Critique(BaseModel):
+    unanswered: list[str] = Field(default_factory=list, description="Parts of the question the facts do not answer, max 3, one short sentence each")
+    tasks: list[CritiqueTask] = Field(default_factory=list, description="At most 2 extra lookups that would answer an unanswered part, only with allowed ids")

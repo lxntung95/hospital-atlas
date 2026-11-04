@@ -619,7 +619,7 @@ const prefersReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matc
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 /* ---- timeline: lanes per agent, built from tool_calls (live from /progress, or the final list) ---- */
-const TERMINAL = { "Cohort Retriever": "submit_cohort", "Analyst": "analyze", "Writer": "validate" };
+const TERMINAL = { "Cohort Retriever": "submit_cohort", "Analyst": "analyze", "Writer": "validate", "Critic": "review" };
 function laneStatus(agent, calls, finished) {
   if (finished) return /Researcher R/.test(agent) && calls.some(c => c.name === "submit_finding" && /"status": ?"partial"/.test(c.result || "")) ? "partial" : "done";
   if (/Researcher R/.test(agent)) { const f = calls.find(c => c.name === "submit_finding"); return f ? (/"status": ?"partial"/.test(f.result || "") ? "partial" : "done") : "running"; }
