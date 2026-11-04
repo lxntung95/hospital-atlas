@@ -9,7 +9,7 @@ from agents import SQLiteSession
 import app as app_module
 from atlas import analyst, cms, config, orchestrator, progress, render
 from atlas.context import RequestContext
-from tests.test_analyst import hf_bronx
+from tests.conftest import hf_bronx
 
 
 @pytest.fixture

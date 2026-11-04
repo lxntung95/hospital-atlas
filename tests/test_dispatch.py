@@ -7,15 +7,7 @@ from types import SimpleNamespace
 
 from atlas import config, orchestrator
 from atlas.schemas import Finding, ResearchTask
-from tests.conftest import call
-
-
-def task(i, kind="cost"):
-    return ResearchTask(id=f"R{i}", kind=kind, question="q", cohort_handle="C1", drg_codes=[291], measure_ids=[]).model_dump()
-
-
-def prepare(ctx):
-    ctx.cohorts["C1"] = {"ccns": ["330059"], "label": "x"}
+from tests.conftest import call, prepare, task
 
 
 def stub_run(monkeypatch, behaviour):
@@ -103,21 +95,21 @@ async def test_hooks_record_agent_and_time(ctx):
     assert c["agent"] == "Cost Researcher R1" and c["args"] == {"q": 1} and len(c["result"]) == 800 and "t" in c
 
 
-async def test_deterministic_cohort_fallback_when_retriever_fails(ctx, monkeypatch):
+async def test_deterministic_cohort_fallback_when_retriever_fails(ctx, stub_runner):
     async def boom(*a, **k):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", boom)
+    stub_runner(boom)
     out = json.loads(await call(orchestrator.resolve_cohort, ctx, request="Compare Montefiore with other Bronx hospitals on heart failure"))
     assert out["focus_hospitals"][0]["ccn"] == "330059" and 291 in out["drg_codes"] and "MORT_30_HF" in out["measure_ids"]
     assert "330059" in ctx.cohorts[out["cohort_handle"]]["ccns"] and out["n"] >= 3
 
 
-async def test_deterministic_fallback_flags_out_of_scope(ctx, monkeypatch):
+async def test_deterministic_fallback_flags_out_of_scope(ctx, stub_runner):
     async def boom(*a, **k):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", boom)
+    stub_runner(boom)
     out = json.loads(await call(orchestrator.resolve_cohort, ctx, request="How does Boston do on knee replacement?"))
     assert out["unresolved"] and "boston" in out["unresolved"][0]
 

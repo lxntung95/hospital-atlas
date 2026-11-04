@@ -8,8 +8,8 @@ import pytest
 
 from atlas import config, orchestrator
 from atlas.schemas import Finding
-from tests.conftest import call
-from tests.test_dispatch import prepare, task
+from tests.conftest import call, hf_bronx, prepare, task
+
 
 OPTIONS = ["Hip replacement cost in Brooklyn", "Heart failure quality", "Compare the Bronx hospitals"]
 
@@ -35,13 +35,13 @@ def test_vague_detection_is_deterministic(ctx):
     assert not crosswalk.detect("Is Mass General in Boston good?").vague  # out of scope, not vague
 
 
-async def test_fault_injection_timeout_and_error(ctx, monkeypatch):
+async def test_fault_injection_timeout_and_error(ctx, monkeypatch, stub_runner):
     prepare(ctx)
 
     async def fake(agent, input, context, hooks, max_turns):
         return SimpleNamespace(final_output=Finding(task_id="x", summary="ok").model_dump_json())
 
-    monkeypatch.setattr(orchestrator.Runner, "run", fake)
+    stub_runner(fake)
     for fault, word in (("timeout", "timed out"), ("error", "RuntimeError")):
         monkeypatch.setenv("ATLAS_FAULT", fault)
         ctx.rounds_used = 0
@@ -50,40 +50,35 @@ async def test_fault_injection_timeout_and_error(ctx, monkeypatch):
         assert by["R1"]["status"] == "partial" and word in by["R1"]["summary"] and by["R2"]["status"] == "ok"
 
 
-async def test_answer_timeout_returns_labelled_partial(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "SESSIONS_DB", str(tmp_path / "s.db"))
+async def test_answer_timeout_returns_labelled_partial(monkeypatch, sessions_db, tmp_path, stub_runner):
     monkeypatch.setattr(config, "REQUEST_S", 0.05)
 
     async def slow(*a, **k):
         await asyncio.sleep(5)
 
-    monkeypatch.setattr(orchestrator.Runner, "run", slow)
+    stub_runner(slow)
     a = await orchestrator.answer("heart failure in the Bronx", "s-timeout")
     assert a.text and "could not finish" in a.text and "time limit" in a.text
 
 
-async def test_answer_error_with_facts_writes_from_gathered_data(ctx, monkeypatch, tmp_path):
-    from tests.test_analyst import hf_bronx
-    monkeypatch.setattr(config, "SESSIONS_DB", str(tmp_path / "s.db"))
+async def test_answer_error_with_facts_writes_from_gathered_data(ctx, sessions_db, tmp_path):
     await hf_bronx(ctx)
     ctx.rounds_used = 1
     text = await orchestrator._rescue(ctx, "boom", write=False)
     assert "Partial results" in text and "### Sources" in text
 
 
-async def test_no_stack_trace_on_exception(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "SESSIONS_DB", str(tmp_path / "s.db"))
+async def test_no_stack_trace_on_exception(sessions_db, tmp_path, stub_runner):
 
     async def boom(*a, **k):
         raise ValueError("secret internals")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", boom)
+    stub_runner(boom)
     a = await orchestrator.answer("hello there", "s-err")
     assert "Traceback" not in a.text and "secret internals" not in a.text
 
 
-async def test_vague_first_turn_clarifies_then_never_twice(monkeypatch, tmp_path, ctx):
-    monkeypatch.setattr(config, "SESSIONS_DB", str(tmp_path / "s.db"))
+async def test_vague_first_turn_clarifies_then_never_twice(ctx, sessions_db, tmp_path, stub_runner):
     seen = []
 
     async def fake(agent, input, context, hooks=None, session=None, max_turns=None):
@@ -94,7 +89,7 @@ async def test_vague_first_turn_clarifies_then_never_twice(monkeypatch, tmp_path
             return SimpleNamespace(final_output=out)
         return SimpleNamespace(final_output="researched")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", fake)
+    stub_runner(fake)
     a1 = await orchestrator.answer("Which NY hospitals are the best?", "s-q3", client=ctx.client)
     assert a1.text.startswith("## Which?") and a1.ctx.clarified
     a2 = await orchestrator.answer("Which NY hospitals are best overall?", "s-q3", client=ctx.client)  # still vague, but we asked already
@@ -121,10 +116,9 @@ async def test_model_call_cap_is_four():
     assert config.loop_semaphore("model", config.MODEL_CALLS)._value == 4
 
 
-async def test_partial_findings_are_labelled_in_report(ctx, monkeypatch):
+async def test_partial_findings_are_labelled_in_report(ctx):
     from atlas import render, validate
     from atlas.schemas import Report
-    from tests.test_analyst import hf_bronx
     await hf_bronx(ctx)
     ctx.partials.append("cost task R1 (Cost Researcher R1) did not finish: timed out after 60s")
     from atlas import analyst
@@ -159,7 +153,7 @@ async def test_write_report_fills_fillable_gaps_once(ctx, monkeypatch):
     assert await call(orchestrator.write_report, ctx) == "REPORT" and len(ran) == 1  # nothing fillable left
 
 
-async def test_critic_runs_only_in_thinking_and_adds_gaps(ctx, monkeypatch):
+async def test_critic_runs_only_in_thinking_and_adds_gaps(ctx, monkeypatch, stub_runner):
     from atlas import orchestrator
     from atlas.schemas import Critique
 
@@ -176,7 +170,7 @@ async def test_critic_runs_only_in_thinking_and_adds_gaps(ctx, monkeypatch):
         return Res()
 
     monkeypatch.setattr(orchestrator, "compose", fake_compose)
-    monkeypatch.setattr(orchestrator.Runner, "run", fake_run)
+    stub_runner(fake_run)
     ctx.rounds_used = 1
     ctx.cohorts["C1"] = {"ccns": ["330059"]}
     ctx.facts = [type("F", (), {"label": "x", "display": "1"})()]
