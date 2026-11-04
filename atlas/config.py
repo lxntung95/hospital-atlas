@@ -44,8 +44,8 @@ SETTINGS = ModelSettings(extra_args={"vertex_location": "global", "timeout": 45,
 # gpt-oss-120b (reachable in us-central1 but it did not drive the tool loop reliably: 180-240 s or failures).
 MODEL_CHOICES = {
     "vertex_ai/gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fast)",
-    "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash (slower)",
-    "vertex_ai/gemini-3.1-pro-preview": "Gemini 3.1 Pro preview (slowest)",
+    "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash (medium)",
+    "vertex_ai/gemini-3.1-pro-preview": "Gemini 3.1 Pro preview (slow)",
 }
 if MODEL_ID not in MODEL_CHOICES:  # an ATLAS_MODEL override stays selectable
     MODEL_CHOICES[MODEL_ID] = MODEL_ID
