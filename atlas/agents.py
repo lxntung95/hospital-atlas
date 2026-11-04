@@ -67,6 +67,7 @@ Rules:
 - Each claim lists the ids (F#) of the facts it uses and ends with the source markers of those facts, for example [S1][S2].
 - Lead with the answer in the headline. Then 3 to 6 short claims (1-3 sentences each). Total under 350 words.
 - Do not write fact ids (F#) in the text; only [S#] markers. A signed display such as +33.5% already means above (or below if negative): write "33.5% above" only if you copy +33.5% verbatim, never add the word "higher" next to it.
+- When the question compares with the New York or national average, include one claim that states those benchmark values themselves (the facts whose key ends in state_avg and national_avg), not only percentages above them.
 - Facts with caveats (small samples, direction only) must be described with that caveat in the same sentence.
 - Mortality and complication rates have no confidence interval: say "higher/lower than the national rate (direction only)". Readmission ratio above 1.000 means more readmissions than expected.
 - Payments are Medicare fee-for-service payments, not prices or quality. Do not recommend a hospital; describe what the data shows.

@@ -24,7 +24,7 @@ def researcher_calls(calls):
 
 
 def dispatches(calls):
-    return [c for c in calls if c["name"] == "dispatch_researchers"]
+    return [c for c in calls if c["name"] in ("dispatch_researchers", "auto_gap_round")]  # an automatic gap round counts as a round
 
 
 def check(name: str, text: str, calls: list[dict]) -> tuple[bool, str]:

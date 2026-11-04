@@ -134,6 +134,11 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
     for t in tasks:
         if t.cohort_handle not in c.cohorts:
             return err(f"unknown cohort handle {t.cohort_handle!r}", f"known handles: {', '.join(c.cohorts) or 'none'}")
+    return await _run_round(c, tasks)
+
+
+async def _run_round(c: RequestContext, tasks: list[ResearchTask]) -> str:
+    """One parallel research round plus the analysis. Shared by the Lead's dispatch tool and the automatic gap round."""
     c.rounds_used += 1
     c.stage(f"researching (round {c.rounds_used}, {len(tasks)} researchers in parallel)")
     timeout = min(config.RESEARCHER_S, c.remaining() - config.WRITER_RESERVE_S)
@@ -192,6 +197,20 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
     return render.render(v, c)
 
 
+def _gap_tasks(c: RequestContext) -> list[ResearchTask]:
+    handle = list(c.cohorts)[-1]
+    out, seen = [], set()
+    for g in c.gaps:
+        t = g.suggested_task if getattr(g, "fillable", False) else None
+        key = json.dumps(t, sort_keys=True) if t else None
+        if not t or key in seen or len(out) >= 3:
+            continue
+        seen.add(key)
+        n = c.counters.get("researchers", 0) + len(out) + 1
+        out.append(ResearchTask(id=f"R{n}", kind=t["kind"], question=g.detail, cohort_handle=handle, drg_codes=t.get("drg_codes", []), measure_ids=t.get("measure_ids", [])))
+    return out
+
+
 @tool
 async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "") -> str:
     """Finish: produce the final cited report for the user. Always the last call. Takes no text: the report is written from the analysed facts.
@@ -202,6 +221,11 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     c = ctx.context
     if c.rounds_used == 0 and not reason:
         return err("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
+    if not reason and 1 <= c.rounds_used < 1 + config.MAX_GAP_ROUNDS and c.cohorts and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S + 15:
+        tasks = _gap_tasks(c)  # the Lead skipped a fillable gap: run one deterministic gap round so the report is complete
+        if tasks:
+            c.record("Lead", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")
+            await _run_round(c, tasks)
     return await compose(c, c.question, reason)
 
 
