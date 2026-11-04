@@ -24,10 +24,10 @@ def test_registry_dedupes_and_numbers():
     assert [s.id for s in reg.all()] == ["S1", "S2"] and reg.get("S9") is None
 
 
-def test_table_store_handles_and_preview():
+def test_table_store_handles():
     store = TableStore()
     t = store.add("rows", [{"x": i} for i in range(10)], source_id="S1")
-    assert t.id == "T1" and t.columns == ["x"] and len(t.preview()) == 5
+    assert t.id == "T1" and t.columns == ["x"]
     assert store.get("T1") is t
 
 

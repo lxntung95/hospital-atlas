@@ -430,7 +430,7 @@ function rename(c, item) {
 function removeChat(c) {
   if (busy && c === current) return toast("Wait for the current answer, or press Stop.");
   const idx = memory.chats.indexOf(c); memory.chats.splice(idx, 1); saveStore();
-  if (c === current) { current = memory.chats.find(x => x.messages.length) || newChat(); if (current.messages.length === 0 && !memory.chats.includes(current)) {/* fresh, unsaved */} }
+  if (c === current) current = memory.chats.find(x => x.messages.length) || newChat();
   render();
   toast("Deleted “" + c.title.slice(0, 40) + "”", "Undo", () => { memory.chats.splice(Math.min(idx, memory.chats.length), 0, c); saveStore(); current = c; render(); });
 }
@@ -470,7 +470,7 @@ function badgesFor(m) {
   const b = el("div", { class: "badges" });
   if (m.meta && !m.meta.error) {
     const label = (m.meta.model_label || m.meta.model || "").replace(/^vertex_ai\//, "").replace(/ \(.*\)/, "");
-    const eff = ({ low: "fast", medium: "balanced", high: "thorough" })[m.meta.effort] || m.meta.effort || "";
+    const eff = ((models.efforts.find(e => e.id === m.meta.effort) || {}).label || m.meta.effort || "").toLowerCase();
     b.append(el("span", { class: "badge", text: [label, eff, m.meta.elapsed_s != null ? Math.round(m.meta.elapsed_s) + " s" : ""].filter(Boolean).join(" · ") }));
     if (m.meta.rounds > 1) b.append(el("span", { class: "badge", text: m.meta.rounds + " research rounds" }));
     if (m.meta.served_from === "degraded") b.append(el("span", { class: "badge warn", title: (m.meta.notes || []).join("; "), text: "fallback data used" }));
@@ -519,7 +519,7 @@ function setControls() {
   if (!models.models.some(m => m.id === current.model)) current.model = models.default.model;
   sel.value = current.model;
   const seg = $("#effort"); seg.textContent = "";
-  models.efforts.forEach(e => seg.append(el("button", { type: "button", text: e.label, "aria-pressed": String(e.id === current.effort), "data-effort": e.id, title: e.id === "low" ? "Fastest" : e.id === "medium" ? "More reasoning for planning and writing" : "Most reasoning for planning and writing; slowest" })));
+  models.efforts.forEach(e => seg.append(el("button", { type: "button", text: e.label, "aria-pressed": String(e.id === current.effort), "data-effort": e.id, title: ({ low: "Fastest: about 20 s", medium: "More reasoning for planning: about 30 s", high: "Adds a critic review and a second gap-fill round: about 60 s" })[e.id] })));
   const stopping = !!busy; $("#send").textContent = stopping ? "Stop" : "Send"; $("#send").classList.toggle("stop", stopping);
   sel.disabled = stopping; seg.querySelectorAll("button").forEach(b => b.disabled = stopping);
 }
@@ -579,7 +579,7 @@ async function send(text) {
   }
 }
 
-/* ============ evidence panel (Map / Tables / Charts arrive in Phase 8; Sources works now) ============ */
+/* ============ evidence panel ============ */
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "tab-" + name);
@@ -614,7 +614,7 @@ function highlightSource(id) {
   document.querySelectorAll(".src.hl").forEach(x => x.classList.remove("hl"));
   const n = document.getElementById("src-" + id); if (n) { n.classList.add("hl"); n.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
 }
-/* ============ Phase 8: timeline, map, tables, charts ============ */
+/* ============ timeline, map, tables, charts ============ */
 const prefersReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 

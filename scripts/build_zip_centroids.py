@@ -1,23 +1,19 @@
 """Build data/ny_zip_centroids.json: {zip5: [lat, lon]} for the ZIPs of NY hospitals, from the Census 2023 ZCTA gazetteer
 (public domain). The download is read in memory (never extracted or executed).
 
-Run: uv run python scripts/build_zip_centroids.py
+Run: uv run python -m scripts.build_zip_centroids
 """
 
 import asyncio
 import csv
 import io
 import json
-import sys
 import zipfile
-from pathlib import Path
 
 import httpx
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from atlas import cms  # noqa: E402
+from atlas import cms
+from atlas.config import DATA_DIR
 
 URL = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/2023_Gaz_zcta_national.zip"
 
@@ -40,7 +36,7 @@ async def main():
         if z in wanted:
             out[z] = [round(float(row[i_lat]), 4), round(float(row[i_lon]), 4)]
     missing = sorted(wanted - set(out))
-    (ROOT / "data" / "ny_zip_centroids.json").write_text(json.dumps(out, separators=(",", ":"), sort_keys=True))
+    (DATA_DIR / "ny_zip_centroids.json").write_text(json.dumps(out, separators=(",", ":"), sort_keys=True))
     print(f"{len(out)} of {len(wanted)} hospital ZIPs; missing: {missing}")
 
 

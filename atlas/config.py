@@ -110,7 +110,7 @@ PROVIDER_API = "https://data.cms.gov/provider-data/api/1/datastore/query"
 DATA_API_PAGE = 5000  # data-api max page size
 PROVIDER_PAGE = 1500  # Provider Data max limit (1600 returns 400)
 
-# dataset ids (see docs/PLAN 1/Overview.md section 2)
+# dataset ids
 GENERAL_INFO = "xubh-q36u"
 INPATIENT_BY_PROVIDER = "690ddc6c-2767-4618-b277-420ffb2bf27c"  # CY2024
 INPATIENT_BY_GEOGRAPHY = "2941ab09-8cee-49d8-9703-f3c5b854e388"

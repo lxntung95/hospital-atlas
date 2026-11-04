@@ -1,7 +1,7 @@
 """End-to-end evals E1-E8. String/regex/structural checks only, no LLM judge.
 
-Local (default):  uv run python evals/run_evals.py [--only E2]
-Deployed:         uv run python evals/run_evals.py --url https://<service> --token "$(gcloud auth print-identity-token)"
+Local (default):  uv run python -m evals.run_evals [--only E2]
+Deployed:         uv run python -m evals.run_evals --url https://<service> --token "$(gcloud auth print-identity-token)"
   (IAP usually rejects CLI tokens; for the deployed app click through in a signed-in browser instead.)
 Set ATLAS_FAULT=timeout|error to check the partial-report path.
 """
@@ -15,8 +15,7 @@ import time
 import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+CASES = Path(__file__).with_name("cases.jsonl")
 
 
 def researcher_calls(calls):
@@ -108,7 +107,7 @@ async def main():
     ap.add_argument("--url")
     ap.add_argument("--token")
     args = ap.parse_args()
-    cases = [json.loads(line) for line in (ROOT / "evals" / "cases.jsonl").read_text().splitlines() if line.strip()]
+    cases = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
     if args.only:
         cases = [c for c in cases if c["id"] in args.only.split(",")]
     failed = 0

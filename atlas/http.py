@@ -5,7 +5,7 @@ import asyncio
 import gzip
 import json
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse

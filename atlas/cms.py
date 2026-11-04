@@ -3,7 +3,7 @@
 Every adapter returns a Result: typed rows plus what a Source needs (dataset, period, URL, retrieved date, fallback note).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from atlas import config
 from atlas.http import CmsClient, Fetched, SliceSpec, get_client

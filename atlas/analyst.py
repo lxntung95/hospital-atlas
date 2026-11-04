@@ -245,7 +245,6 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
                      "small_n": (r["discharges"] or 0) < MIN_DISCHARGES, "focus": r["ccn"] in focus} for i, r in enumerate(ranked[primary], 1)]
 
     # ---- quality
-    quality: dict[str, tuple[str, dict]] = {}  # ccn -> (signal text key info) used for the quadrant
     hrrp = _collect(ctx, "hrrp")
     outcomes = _collect(ctx, "outcomes")
     hcahps = _collect(ctx, "hcahps")

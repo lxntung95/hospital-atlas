@@ -1,7 +1,7 @@
 """Sources (S#): every dataset pull the report may cite, with a reproducible URL."""
 
 from dataclasses import dataclass
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from atlas.config import DATA_API, PROVIDER_API
 

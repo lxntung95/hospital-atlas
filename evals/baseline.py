@@ -1,7 +1,7 @@
 """Baseline: the same model with NO system prompt and NO tools, asked the three README questions.
 Writes evals/baselines.md (raw outputs, model, timestamp).
 
-    uv run python evals/baseline.py
+    uv run python -m evals.baseline
 """
 
 import datetime as dt

@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 
 from atlas import analyst, tools
 from atlas.analyst import fmt_int, fmt_ordinal, fmt_pct, fmt_period, fmt_ratio, fmt_usd, psi_signal, quartiles, weighted_mean

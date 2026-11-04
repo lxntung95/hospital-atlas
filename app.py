@@ -67,11 +67,7 @@ def message_only(text: str, session_id: str, model: str | None = None, effort: s
 @app.exception_handler(Exception)
 async def show_errors_in_chat(request: Request, exc: Exception):
     # Auth, billing, a model that is not running: show it in the chat, not as a 500.
-    return JSONResponse({
-        "response": f"Model call failed: {type(exc).__name__}: {str(exc)[:300]}",
-        "session_id": request.query_params.get("session_id", ""),
-        "tool_calls": [],
-    })
+    return JSONResponse(message_only(f"Model call failed: {type(exc).__name__}: {str(exc)[:300]}", request.query_params.get("session_id", "")).model_dump())
 
 
 @app.get("/")

@@ -12,9 +12,6 @@ class Table:
     source_id: str | None = None
     meta: dict = field(default_factory=dict)
 
-    def preview(self, n: int = 5) -> list[dict]:
-        return self.rows[:n]
-
 
 class TableStore:
     def __init__(self):

@@ -1,7 +1,6 @@
 """Phase 6: request/response additions, allowlist, effort mapping, progress registry, history seeding, artifacts. Offline."""
 
 import time
-from types import SimpleNamespace
 
 import httpx
 import pytest
