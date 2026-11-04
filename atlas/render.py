@@ -44,8 +44,8 @@ def quadrant_table(ctx: RequestContext) -> str:
         t = None
     if not t or not t.rows:
         return ""
-    rows = [r for r in t.rows if r.get("focus")] or t.rows[:RANK_ROWS]
-    rows = rows[:RANK_ROWS]
+    focus = [r for r in t.rows if r.get("focus")]  # asked-about hospitals first, then the rest of the cohort up to the row cap
+    rows = (focus + [r for r in t.rows if not r.get("focus")])[:RANK_ROWS]
     body = [[r["name"], r["payment_display"], r["quality_measure"] or "-", r["quality_display"] or "-", r["quadrant"] if r["quadrant"] != "insufficient data" else f"insufficient data ({r['reason']})"]
             for r in rows]
     cap = f"**{t.title}** {_marks(t.meta.get('source_ids', []))}"

@@ -133,3 +133,28 @@ async def test_partial_findings_are_labelled_in_report(ctx, monkeypatch):
     v = await validate.validate(Report(headline="h", claims=[], data_cannot_tell_you=["a", "b"]), ctx)
     md = render.render(v, ctx)
     assert "_Partial report:" in md and "Partial result:" in md
+
+
+async def test_write_report_fills_fillable_gaps_once(ctx, monkeypatch):
+    from atlas import orchestrator
+    from atlas.schemas import Gap
+
+    async def fake_compose(c, q, reason):
+        return "REPORT"
+
+    ran = []
+
+    async def fake_round(c, tasks):
+        ran.append([(t.kind, t.drg_codes) for t in tasks])
+        c.rounds_used += 1
+        c.gaps = []
+        return "{}"
+
+    monkeypatch.setattr(orchestrator, "compose", fake_compose)
+    monkeypatch.setattr(orchestrator, "_run_round", fake_round)
+    ctx.rounds_used = 1
+    ctx.cohorts["C1"] = {"ccns": ["330059"]}
+    ctx.gaps = [Gap(kind="missing_metric", detail="DRG 292 missing", fillable=True, suggested_task={"kind": "cost", "drg_codes": [292]})]
+    assert await call(orchestrator.write_report, ctx) == "REPORT"
+    assert ran == [[("cost", [292])]]
+    assert await call(orchestrator.write_report, ctx) == "REPORT" and len(ran) == 1  # nothing fillable left

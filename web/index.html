@@ -636,7 +636,7 @@ function laneNode(agent, calls, finished, open) {
 }
 function renderLanes(host, calls, finished) {
   const open = new Set([...host.querySelectorAll("details.lane[open]")].map(d => d.dataset.agent + "|" + d.closest("[data-round]")?.dataset.round));
-  let round = 1; const tagged = calls.map(c => { const r = round; if (c.agent === "Lead" && c.name === "dispatch_researchers") round++; return { ...c, round: r }; });
+  let round = 1; const tagged = calls.map(c => { const r = round; if (c.agent === "Lead" && (c.name === "dispatch_researchers" || c.name === "auto_gap_round")) round++; return { ...c, round: r }; });
   const items = [], seen = new Set();
   tagged.forEach(c => {
     const researcher = /Researcher R/.test(c.agent);
