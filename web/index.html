@@ -8,7 +8,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <style>
 :root {
@@ -147,6 +150,54 @@ dialog .row button { padding: 8px 14px; border-radius: 8px; border: 1px solid va
 dialog .row .danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 #scrim { display: none; }
 
+
+/* ---- Phase 8: timeline, map, tables, charts. Quadrant colours = dataviz categorical slots 1,2,3,7 + shapes (never colour alone). ---- */
+:root { --q-lb: #2a78d6; --q-hw: #eb6834; --q-lw: #6250d6; --q-hb: #1baf7a; --q-na: #8a98a1; --grid: #d8e0e4; }
+:root[data-resolved="dark"] { --q-lb: #3987e5; --q-hw: #d95926; --q-lw: #9085e9; --q-hb: #199e70; --q-na: #7d8e99; --grid: #2a3a44; }
+.tl-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.tl-round { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--accent); border-top: 1px dashed var(--border); padding-top: 6px; }
+.tl-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.lane { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 6px 10px; min-width: 0; animation: lanein .25s ease-out; }
+@keyframes lanein { from { opacity: 0; transform: translateY(4px); } }
+.lane summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; font-family: var(--sans); font-size: 13px; color: var(--text); }
+.lane summary::-webkit-details-marker { display: none; }
+.lane .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane .ct { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.sdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--q-na); }
+.sdot.running { background: var(--accent); animation: bounce 1.2s infinite ease-in-out; }
+.sdot.done { background: var(--accent); }
+.sdot.partial { background: var(--flag); border-radius: 2px; }
+.lane .calls { margin-top: 6px; font-size: 11.5px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.lane .call b { color: var(--text); font-weight: 500; }
+.lane .call pre { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; max-height: 120px; overflow: auto; background: var(--surface-2); border-radius: 6px; padding: 4px 6px; }
+details.tlbox { margin-top: 10px; font-size: 13px; } details.tlbox > summary { cursor: pointer; color: var(--muted); }
+#map { height: 340px; border: 1px solid var(--border); border-radius: 12px; z-index: 0; background: var(--surface-2); }
+.leaflet-container { font-family: var(--sans); }
+.mk { display: grid; place-items: center; border-radius: 50%; }
+.mk.focus { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.mk i { display: block; width: 100%; height: 100%; background: var(--c); border: 2px solid var(--surface); box-sizing: border-box; }
+.mk.sh-circle i { border-radius: 50%; } .mk.sh-diamond i { transform: rotate(45deg) scale(.78); } .mk.sh-tri i { clip-path: polygon(50% 4%, 96% 92%, 4% 92%); border: 0; }
+.mk.sh-square i { border-radius: 2px; }
+.mk.sh-ring i { background: transparent; border: 2px dashed var(--c); border-radius: 50%; }
+.q-lb { --c: var(--q-lb); } .q-hw { --c: var(--q-hw); } .q-lw { --c: var(--q-lw); } .q-hb { --c: var(--q-hb); } .q-na { --c: var(--q-na); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin: 8px 0; color: var(--text); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; } .legend .mk { width: 14px; height: 14px; }
+.note { font-size: 12px; color: var(--muted); margin: 6px 0; }
+.popup h4 { margin: 0 0 4px; font-size: 14px; } .popup dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; } .popup dt { color: #55656f; } .popup dd { margin: 0; }
+.popup .btnrow { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.chipbtn.sm { font-size: 12px; padding: 3px 9px; }
+.tblwrap { max-height: 56vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; margin: 6px 0 14px; }
+table.dt { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+table.dt th { position: sticky; top: 0; background: var(--surface-2); z-index: 1; text-align: left; padding: 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.dt th button { all: unset; cursor: pointer; padding: 6px 8px; display: block; width: 100%; box-sizing: border-box; font-weight: 600; }
+table.dt th button:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+table.dt th.num button { text-align: right; } table.dt td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.dt td { padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.dt tr.sel td { background: var(--accent-soft); } table.dt tr.focusrow td:first-child { box-shadow: inset 3px 0 var(--accent); }
+.tblhead { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; } .tblhead h3 { font-size: 14px; margin: 8px 0 0; }
+.chartbox { position: relative; height: 340px; margin: 6px 0; } .chartbox.tall { height: 420px; }
+.pane h3 { font-size: 14px; margin: 14px 0 0; }
+.pane details.alt { margin: 4px 0 10px; font-size: 12.5px; } .pane details.alt summary { cursor: pointer; color: var(--muted); }
 @media (max-width: 1180px) {
   #layout { grid-template-columns: 264px minmax(0, 1fr); }
   aside#evidence { position: fixed; right: 0; top: 56px; bottom: 0; width: min(420px, 92vw); transform: translateX(100%); transition: transform .2s; z-index: 30; box-shadow: var(--shadow); }
@@ -159,6 +210,7 @@ dialog .row .danger { background: var(--danger); color: #fff; border-color: var(
   body.sidebar-open aside#sidebar { transform: none; }
   body.sidebar-open #scrim, body.evidence-open #scrim { display: block; position: fixed; inset: 56px 0 0 0; background: rgba(0,0,0,.4); z-index: 20; }
   header .chip.vintage-chip { display: none; }
+  header { gap: 8px; padding: 0 10px; } header h1 { font-size: 15px; } .icon-btn { padding: 6px 8px; }
   #scroll { padding: 14px 16px 8px; } footer#composer { padding: 8px 16px 12px; }
   .msg.user .bubble { max-width: 94%; }
   .welcome { padding: 18px; } .welcome dl { grid-template-columns: 1fr; }
@@ -442,7 +494,7 @@ function messageNode(m, i, isLast) {
   const bubble = el("div", { class: "bubble" });
   if (m.error) { bubble.append(el("div", { text: m.text })); const prev = current.messages[i - 1]; if (prev && isLast) bubble.append(el("div", { class: "badges" }, el("button", { class: "chipbtn", text: "Retry", onclick: () => { current.messages.splice(i - 1, 2); send(prev.text); } }))); }
   else {
-    bubble.append(renderMarkdown(m.text), badgesFor(m));
+    bubble.append(renderMarkdown(m.text), badgesFor(m)); const tl = timelineBox(m.tool_calls); if (tl) bubble.append(tl);
     const opts = isLast ? clarificationOptions(m.text) : [];
     if (opts.length) { const c = el("div", { class: "chips followchips" }); opts.forEach(o => c.append(el("button", { class: "chipbtn", text: o, onclick: () => send(o) }))); bubble.append(c); }
   }
@@ -531,6 +583,9 @@ async function send(text) {
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "tab-" + name);
+  if (current) current.tab = name;
+  if (name === "map" && leaflet) setTimeout(() => leaflet.invalidateSize(), 0);
+  if (name === "charts") charts.forEach(c => c.resize());
 }
 document.querySelector(".tabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
 document.querySelector(".tabs").addEventListener("keydown", e => {
@@ -539,10 +594,13 @@ document.querySelector(".tabs").addEventListener("keydown", e => {
   const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); showTab(n.dataset.tab);
 });
 function emptyPane(id, text) { const p = $("#" + id); p.textContent = ""; p.append(el("div", { class: "empty", text })); }
+let renderedArt;
 function renderEvidence(art) {
-  window.Atlas.artifacts = art;
+  if (art && art === renderedArt) { showTab((current && current.tab) || "map"); return; }
+  renderedArt = art; window.Atlas.artifacts = art;
   if (!art) { emptyPane("tab-map", "Hospitals from your answer are mapped here."); emptyPane("tab-tables", "Ranking and comparison tables appear here."); emptyPane("tab-charts", "Charts appear here."); emptyPane("tab-sources", "Every dataset a report cites is listed here with its URL."); return; }
   window.Atlas.renderMap(art); window.Atlas.renderTables(art); window.Atlas.renderCharts(art); renderSources(art);
+  showTab((current && current.tab) || "map");
 }
 function renderSources(art) {
   const p = $("#tab-sources"); p.textContent = "";
@@ -556,18 +614,202 @@ function highlightSource(id) {
   document.querySelectorAll(".src.hl").forEach(x => x.classList.remove("hl"));
   const n = document.getElementById("src-" + id); if (n) { n.classList.add("hl"); n.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
 }
-// Hooks Phase 8 replaces. Keep the names stable.
-window.Atlas = {
-  artifacts: null,
-  renderMap: a => emptyPane("tab-map", (a.cohort || []).length ? "Map view arrives in the next update. Hospitals are in the Tables and Sources tabs." : "No hospitals to map for this answer."),
-  renderTables: a => { const p = $("#tab-tables"); p.textContent = ""; if (!(a.tables || []).length) return p.append(el("div", { class: "empty", text: "No tables for this answer." })); a.tables.forEach(t => p.append(el("p", { text: t.title }))); },
-  renderCharts: a => emptyPane("tab-charts", "Charts arrive in the next update."),
-  onProgress: null,
+/* ============ Phase 8: timeline, map, tables, charts ============ */
+const prefersReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---- timeline: lanes per agent, built from tool_calls (live from /progress, or the final list) ---- */
+const TERMINAL = { "Cohort Retriever": "submit_cohort", "Analyst": "analyze", "Writer": "validate" };
+function laneStatus(agent, calls, finished) {
+  if (finished) return /Researcher R/.test(agent) && calls.some(c => c.name === "submit_finding" && /"status": ?"partial"/.test(c.result || "")) ? "partial" : "done";
+  if (/Researcher R/.test(agent)) { const f = calls.find(c => c.name === "submit_finding"); return f ? (/"status": ?"partial"/.test(f.result || "") ? "partial" : "done") : "running"; }
+  return TERMINAL[agent] && calls.some(c => c.name === TERMINAL[agent]) ? "done" : "running";
+}
+function laneNode(agent, calls, finished, open) {
+  const st = laneStatus(agent, calls, finished), secs = calls.length ? Math.max(0, calls[calls.length - 1].t - calls[0].t) : 0;
+  const d = el("details", { class: "lane", "data-agent": agent },
+    el("summary", {}, el("span", { class: "sdot " + st, title: st }), el("span", { class: "nm", text: agent }), el("span", { class: "ct", text: calls.length + " call" + (calls.length === 1 ? "" : "s") + (secs >= 1 ? " · " + secs.toFixed(0) + " s" : "") })));
+  const box = el("div", { class: "calls" });
+  calls.forEach(c => box.append(el("div", { class: "call" }, el("b", { text: c.name }), " ", el("span", { text: "at " + c.t + " s" }),
+    el("pre", { text: JSON.stringify(c.args) + "\n→ " + (c.result || "").slice(0, 300) }))));
+  d.append(box); if (open) d.open = true; return d;
+}
+function renderLanes(host, calls, finished) {
+  const open = new Set([...host.querySelectorAll("details.lane[open]")].map(d => d.dataset.agent + "|" + d.closest("[data-round]")?.dataset.round));
+  let round = 1; const tagged = calls.map(c => { const r = round; if (c.agent === "Lead" && c.name === "dispatch_researchers") round++; return { ...c, round: r }; });
+  const items = [], seen = new Set();
+  tagged.forEach(c => {
+    const researcher = /Researcher R/.test(c.agent);
+    const key = researcher ? "group" + c.round : c.agent; if (!seen.has(key)) { seen.add(key); items.push({ key, researcher, round: c.round, agent: c.agent }); }
+  });
+  host.textContent = "";
+  const wrap = el("div", { class: "tl-wrap" });
+  items.forEach(it => {
+    if (it.researcher) {
+      if (it.round > 1) wrap.append(el("div", { class: "tl-round", text: "Round " + it.round + " · gap fill" }));
+      const row = el("div", { class: "tl-row", "data-round": it.round });
+      [...new Set(tagged.filter(c => c.round === it.round && /Researcher R/.test(c.agent)).map(c => c.agent))].forEach(a =>
+        row.append(laneNode(a, tagged.filter(c => c.agent === a && c.round === it.round), finished || it.round < round, open.has(a + "|" + it.round))));
+      wrap.append(row);
+    } else wrap.append(laneNode(it.agent, tagged.filter(c => c.agent === it.agent), finished, open.has(it.agent + "|undefined")));
+  });
+  host.append(wrap);
+}
+function onProgress(d, host) {
+  host._calls = (host._calls || []).concat(d.tool_calls || []); host.removeAttribute("aria-hidden");
+  if ((d.tool_calls || []).length) renderLanes(host, host._calls, false);
+}
+function timelineBox(calls) {
+  if (!calls || !calls.length) return null;
+  const host = el("div"); renderLanes(host, calls, true);
+  host.querySelectorAll("details.lane").forEach(l => l.style.animation = "none");
+  return el("details", { class: "tlbox" }, el("summary", { text: "Research timeline · " + calls.length + " tool calls" }), host);
+}
+
+/* ---- quadrants ---- */
+const QUAD = {
+  "lower cost / better quality": { cls: "q-lb", shape: "sh-circle", label: "Lower cost, better quality" },
+  "higher cost / better quality": { cls: "q-hb", shape: "sh-diamond", label: "Higher cost, better quality" },
+  "lower cost / worse quality": { cls: "q-lw", shape: "sh-tri", label: "Lower cost, worse quality" },
+  "higher cost / worse quality": { cls: "q-hw", shape: "sh-square", label: "Higher cost, worse quality" },
+  "insufficient data": { cls: "q-na", shape: "sh-ring", label: "Insufficient data" },
 };
+const quadOf = q => QUAD[q] || QUAD["insufficient data"];
+const markerEl = (q, size, focus) => { const k = quadOf(q); return el("span", { class: "mk " + k.shape + " " + k.cls + (focus ? " focus" : ""), style: `width:${size}px;height:${size}px` }, el("i")); };
+
+/* ---- selection shared by map and tables ---- */
+function selectHospital(ccn, { scroll } = {}) {
+  document.querySelectorAll("table.dt tr.sel").forEach(r => r.classList.remove("sel"));
+  const rows = [...document.querySelectorAll('table.dt tr[data-ccn="' + CSS.escape(ccn) + '"]')];
+  rows.forEach(r => r.classList.add("sel")); if (scroll && rows[0]) rows[0].scrollIntoView({ block: "center", behavior: prefersReduced() ? "auto" : "smooth" });
+}
+function askAbout(h) {
+  input.value = `Tell me more about ${h.name} (CCN ${h.ccn}): its costs and quality compared with other New York hospitals.`; input.dispatchEvent(new Event("input"));
+  closeDrawers(); input.focus();
+}
+
+/* ---- map ---- */
+let leaflet = null;
+function renderMap(a) {
+  const p = $("#tab-map"); p.textContent = ""; if (leaflet) { leaflet.remove(); leaflet = null; }
+  const all = a.cohort || []; if (!all.length) return p.append(el("div", { class: "empty", text: "No hospitals to map for this answer." }));
+  const pts = all.filter(h => h.lat != null && h.lon != null), missing = all.filter(h => h.lat == null || h.lon == null);
+  const legend = el("div", { class: "legend", "aria-label": "Marker legend" });
+  Object.values(QUAD).forEach(k => legend.append(el("span", {}, el("span", { class: "mk " + k.shape + " " + k.cls, style: "width:14px;height:14px" }, el("i")), k.label)));
+  legend.append(el("span", {}, el("span", { class: "mk sh-circle q-na focus", style: "width:12px;height:12px" }, el("i")), "Ringed = hospital you asked about"));
+  if (!window.L) {
+    p.append(el("div", { class: "note", text: "The map library could not be loaded, so hospitals are listed instead. Locations are ZIP-code centroids (approximate)." }), legend);
+    const ul = el("ul", { class: "note" }); all.slice().sort((x, y) => (y.focus - x.focus) || x.rank - y.rank).slice(0, 40).forEach(h => ul.append(el("li", { text: `${h.name}, ${h.city} · ${h.payment_display} · ${quadOf(h.quadrant).label}` }))); return p.append(ul);
+  }
+  const mapDiv = el("div", { id: "map", role: "application", "aria-label": "Map of hospitals in the answer. Each hospital is also listed in the Tables tab." });
+  p.append(mapDiv, legend, el("div", { class: "note", text: "Marker size = discharges. Positions are ZIP-code centroids, so they are approximate. Map © OpenStreetMap contributors." }));
+  const m = L.map(mapDiv, { zoomControl: true, attributionControl: true }).setView([42.9, -75.5], 6); leaflet = m;
+  let tileErrors = 0; const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 17, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(m);
+  tiles.on("tileerror", () => { if (++tileErrors === 3) p.insertBefore(el("div", { class: "note", text: "Map tiles could not be loaded; hospital markers are still shown." }), legend); });
+  const maxD = Math.max(1, ...pts.map(h => h.discharges || 0)), bounds = [];
+  pts.slice().sort((x, y) => (x.focus - y.focus)).forEach(h => {
+    const size = Math.round(12 + 16 * Math.sqrt((h.discharges || 0) / maxD));
+    const icon = L.divIcon({ html: markerEl(h.quadrant, size, h.focus), className: "", iconSize: [size, size] });
+    const mk = L.marker([h.lat, h.lon], { icon, title: h.name, keyboard: true, zIndexOffset: h.focus ? 1000 : 0 }).addTo(m); bounds.push([h.lat, h.lon]);
+    mk.on("click", () => selectHospital(h.ccn));
+    mk.bindPopup(() => popupFor(h), { maxWidth: 280 });
+  });
+  const fit = (pts.filter(h => h.focus).length ? pts.filter(h => h.focus) : pts).map(h => [h.lat, h.lon]);
+  if (fit.length) m.fitBounds(fit, { padding: [30, 30], maxZoom: 11 });
+  if (missing.length) p.append(el("div", { class: "note", text: "No map position for: " + missing.map(h => h.name).join("; ") }));
+}
+function popupFor(h) {
+  const dl = el("dl"); [["CCN", h.ccn], ["City", h.city], ["Avg payment", h.payment_display], ["Discharges", h.discharges], ["Cost vs quality", quadOf(h.quadrant).label], ["Rank by cost", "#" + h.rank]].forEach(([k, v]) => dl.append(el("dt", { text: k }), el("dd", { text: String(v ?? "n/a") })));
+  const root = el("div", { class: "popup" }, el("h4", { text: h.name }), dl);
+  if (h.small_n) root.append(el("div", { class: "note", text: "Small sample: interpret with caution." }));
+  root.append(el("div", { class: "note", text: "Location approximate (ZIP centroid)." }),
+    el("div", { class: "btnrow" }, el("button", { class: "chipbtn sm", type: "button", text: "Ask about this hospital", onclick: () => askAbout(h) }),
+      el("button", { class: "chipbtn sm", type: "button", text: "Show in table", onclick: () => { showTab("tables"); selectHospital(h.ccn, { scroll: true }); } })));
+  return root;
+}
+
+/* ---- tables ---- */
+const COL_LABEL = { rank: "Rank", ccn: "CCN", name: "Hospital", city: "City", drg: "DRG", discharges: "Discharges", payment_display: "Avg payment", vs_ny_display: "vs NY avg", small_n: "Small n", focus: "Asked", quality_measure: "Measure", quality_display: "Value", quadrant: "Quadrant", reason: "Note" };
+const PAIR = { payment_display: "avg_total_payment", vs_ny_display: "vs_ny_pct", quality_display: "quality_value" };
+const HIDDEN = new Set(Object.values(PAIR));
+const csvCell = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function tableNode(t) {
+  const cols = t.columns.filter(c => !HIDDEN.has(c)); let sortBy = null, dir = 1;
+  const numeric = c => PAIR[c] || ["rank", "drg", "discharges"].includes(c);
+  const keyOf = (r, c) => (PAIR[c] ? r[PAIR[c]] : r[c]);
+  const tbody = el("tbody"), headRow = el("tr");
+  const draw = () => {
+    const rows = t.rows.slice(); if (sortBy) rows.sort((x, y) => { const a = keyOf(x, sortBy), b = keyOf(y, sortBy); if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1; return (typeof a === "number" ? a - b : String(a).localeCompare(String(b))) * dir; });
+    tbody.textContent = "";
+    rows.forEach(r => { const tr = el("tr", { "data-ccn": r.ccn, class: r.focus ? "focusrow" : "" });
+      cols.forEach(c => { const v = r[c]; let cell;
+        if (c === "small_n") cell = v ? el("span", { class: "badge warn", text: "small n" }) : "";
+        else if (c === "focus") cell = v ? "★" : "";
+        else cell = v == null || v === "" ? "–" : String(v);
+        tr.append(el("td", { class: numeric(c) ? "num" : "" }, cell)); });
+      tr.addEventListener("click", () => selectHospital(r.ccn)); tbody.append(tr); });
+    headRow.querySelectorAll("th").forEach(th => th.setAttribute("aria-sort", th.dataset.col === sortBy ? (dir > 0 ? "ascending" : "descending") : "none"));
+  };
+  cols.forEach(c => headRow.append(el("th", { scope: "col", "data-col": c, class: numeric(c) ? "num" : "", "aria-sort": "none" },
+    el("button", { type: "button", title: "Sort by " + (COL_LABEL[c] || c), text: COL_LABEL[c] || c, onclick: () => { if (sortBy === c) dir = -dir; else { sortBy = c; dir = 1; } draw(); } }))));
+  draw();
+  const csv = () => download(slug(t.title) + ".csv", [t.columns.join(",")].concat(t.rows.map(r => t.columns.map(c => csvCell(r[c])).join(","))).join("\n"), "text/csv");
+  return el("div", {}, el("div", { class: "tblhead" }, el("h3", { text: t.title }), el("button", { class: "chipbtn sm", type: "button", text: "Download CSV", onclick: csv })),
+    el("div", { class: "tblwrap", tabindex: "0", role: "region", "aria-label": t.title + " (scrollable)" }, el("table", { class: "dt" }, el("thead", {}, headRow), tbody)));
+}
+function renderTables(a) {
+  const p = $("#tab-tables"); p.textContent = "";
+  if (!(a.tables || []).length) return p.append(el("div", { class: "empty", text: "No tables for this answer." }));
+  p.append(el("div", { class: "note", text: "Click a column heading to sort. Click a row to highlight it." })); a.tables.forEach(t => p.append(tableNode(t)));
+}
+
+/* ---- charts ---- */
+let charts = [];
+function altTable(caption, head, rows) {
+  const t = el("table", { class: "dt" }, el("caption", { class: "note", text: caption }), el("thead", {}, el("tr", {}, ...head.map(h => el("th", { scope: "col" }, el("span", { style: "padding:6px 8px;display:block", text: h }))))), el("tbody", {}, ...rows.map(r => el("tr", {}, ...r.map(c => el("td", { text: String(c ?? "–") }))))));
+  return el("details", { class: "alt" }, el("summary", { text: "Show as a table" }), el("div", { class: "tblwrap" }, t));
+}
+function renderCharts(a) {
+  const p = $("#tab-charts"); p.textContent = ""; charts.forEach(c => c.destroy()); charts = [];
+  const bars = a.charts && a.charts.payment_bars, sc = a.charts && a.charts.cost_quality_scatter;
+  if (!bars || !bars.items.length) return p.append(el("div", { class: "empty", text: "No chart data for this answer." }));
+  const ink = cssv("--text"), muted = cssv("--muted"), grid = cssv("--grid"), accent = cssv("--accent"), surf = cssv("--surface");
+  const refs = bars.references || {};
+  p.append(el("h3", { text: `Average total payment by hospital, DRG ${bars.drg}` }));
+  if (window.Chart) {
+    const items = bars.items, cv = el("canvas", { role: "img", "aria-label": `Bar chart of average total payment for DRG ${bars.drg} at ${items.length} hospitals, with New York and national averages as reference lines. The same data is in the table below.` });
+    p.append(el("div", { class: "chartbox tall" }, cv));
+    const refLines = { id: "refs", afterDatasetsDraw(ch) { const { ctx, chartArea: ca, scales: { x } } = ch; ctx.save(); ctx.font = "11px " + getComputedStyle(document.body).fontFamily; [["NY avg", refs.ny, ink, [6, 4]], ["US avg", refs.national, muted, [2, 3]]].forEach(([lab, r, col, dash], i) => { if (!r) return; const px = x.getPixelForValue(r.value); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(px, ca.top); ctx.lineTo(px, ca.bottom); ctx.stroke(); ctx.setLineDash([]); ctx.textAlign = "center"; ctx.fillText(`${lab} ${r.display}`, Math.min(Math.max(px, ca.left + 50), ca.right - 50), ca.top - 4 - i * 13); }); ctx.restore(); } };
+    charts.push(new Chart(cv, { type: "bar", plugins: [refLines], data: { labels: items.map(i => i.name.length > 24 ? i.name.slice(0, 23) + "…" : i.name), datasets: [{ data: items.map(i => i.value), backgroundColor: items.map(i => i.focus ? accent : muted + "99"), borderRadius: 4, borderSkipped: "start", barPercentage: .8 }] },
+      options: { indexAxis: "y", maintainAspectRatio: false, animation: prefersReduced() ? false : undefined, layout: { padding: { top: 30 } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: c => items[c[0].dataIndex].name, label: c => ` ${items[c.dataIndex].display}${items[c.dataIndex].small_n ? " (small sample)" : ""}${items[c.dataIndex].focus ? " · asked about" : ""}` } } },
+        scales: { x: { beginAtZero: true, grid: { color: grid }, ticks: { color: muted, callback: v => "$" + Number(v).toLocaleString() } }, y: { grid: { display: false }, ticks: { color: ink, font: { size: 11 } } } } } }));
+    p.append(el("div", { class: "note", text: "Highlighted bars are the hospitals you asked about. Dashed lines: New York and national averages." }));
+  } else p.append(el("div", { class: "note", text: "The chart library could not be loaded. The data is in the table below and in the Tables tab." }));
+  p.append(altTable("Payment by hospital", ["Hospital", "Avg payment", "Asked", "Small n"], bars.items.map(i => [i.name, i.display, i.focus ? "yes" : "", i.small_n ? "yes" : ""]).concat([["NY average", refs.ny ? refs.ny.display : "–", "", ""], ["National average", refs.national ? refs.national.display : "–", "", ""]])));
+  if (sc && sc.points.length) {
+    p.append(el("h3", { text: `Cost versus quality (${sc.measure}; lower is better)` }));
+    const pts = sc.points;
+    if (window.Chart) {
+      const cv = el("canvas", { role: "img", "aria-label": `Scatter plot of average payment against ${sc.measure} for ${pts.length} hospitals, coloured and shaped by cost-quality quadrant. The same data is in the table below.` });
+      p.append(el("div", { class: "chartbox tall" }, cv));
+      const style = { "lower cost / better quality": "circle", "higher cost / better quality": "rectRot", "lower cost / worse quality": "triangle", "higher cost / worse quality": "rect" };
+      const cssName = q => ({ "q-lb": "--q-lb", "q-hb": "--q-hb", "q-lw": "--q-lw", "q-hw": "--q-hw", "q-na": "--q-na" })[quadOf(q).cls];
+      const labels = { id: "labels", afterDatasetsDraw(ch) { const { ctx } = ch; ctx.save(); ctx.font = "600 11px " + getComputedStyle(document.body).fontFamily; ctx.fillStyle = ink; ctx.strokeStyle = surf; ctx.lineWidth = 3; ch.getDatasetMeta(0).data.forEach((e, i) => { if (!pts[i].focus) return; ctx.strokeText(pts[i].name, e.x + 8, e.y - 8); ctx.fillText(pts[i].name, e.x + 8, e.y - 8); }); ctx.restore(); } };
+      charts.push(new Chart(cv, { type: "scatter", plugins: [labels], data: { datasets: [{ data: pts.map(q => ({ x: q.x, y: q.y })), pointStyle: pts.map(q => style[q.quadrant] || "circle"), backgroundColor: pts.map(q => cssv(cssName(q.quadrant))), borderColor: surf, borderWidth: 1.5, pointRadius: pts.map(q => q.focus ? 8 : 5.5), pointHoverRadius: 9 }] },
+        options: { maintainAspectRatio: false, animation: prefersReduced() ? false : undefined, layout: { padding: { right: 60, top: 10 } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: c => pts[c[0].dataIndex].name, label: c => [` Payment ${pts[c.dataIndex].x_display}`, ` ${sc.measure} ${pts[c.dataIndex].y_display}`, " " + quadOf(pts[c.dataIndex].quadrant).label] } } },
+          scales: { x: { grid: { color: grid }, title: { display: true, text: "Average total payment", color: muted }, ticks: { color: muted, callback: v => "$" + Number(v).toLocaleString() } }, y: { grid: { color: grid }, title: { display: true, text: sc.measure + " (lower is better)", color: muted }, ticks: { color: muted } } } } }));
+      const lg = el("div", { class: "legend" }); Object.values(QUAD).slice(0, 4).forEach(k => lg.append(el("span", {}, el("span", { class: "mk " + k.shape + " " + k.cls, style: "width:14px;height:14px" }, el("i")), k.label))); p.append(lg);
+    }
+    p.append(altTable("Cost versus quality", ["Hospital", "Avg payment", sc.measure, "Quadrant"], pts.map(q => [q.name, q.x_display, q.y_display, quadOf(q.quadrant).label])));
+  }
+}
+new MutationObserver(() => { if (window.Atlas.artifacts) { renderCharts(window.Atlas.artifacts); } }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-resolved"] });
+
+window.Atlas = { artifacts: null, renderMap, renderTables, renderCharts, onProgress, selectHospital };
 
 /* ============ export, drawers, shortcuts ============ */
 const slug = s => (s || "research").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "research";
-function download(name, text) { const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" })); const a = el("a", { href: url, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function download(name, text, type = "text/markdown") { const url = URL.createObjectURL(new Blob([text], { type })); const a = el("a", { href: url, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 function closeDrawers() { document.body.classList.remove("sidebar-open"); if (matchMedia("(max-width: 1180px)").matches) document.body.classList.remove("evidence-open"); }
 $("#menu-btn").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
 $("#evidence-btn").addEventListener("click", () => document.body.classList.toggle("evidence-open"));
