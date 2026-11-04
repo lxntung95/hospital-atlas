@@ -585,7 +585,7 @@ function showTab(name) {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "tab-" + name);
   if (current) current.tab = name;
-  if (name === "map" && leaflet) setTimeout(() => leaflet.invalidateSize(), 0);
+  if (name === "map" && leaflet) setTimeout(() => { if (leaflet.needsFit) { leaflet.refit(); leaflet.needsFit = false; } else leaflet.invalidateSize(); }, 0);
   if (name === "charts") charts.forEach(c => c.resize());
 }
 document.querySelector(".tabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
@@ -691,6 +691,7 @@ function askAbout(h) {
 }
 
 /* ---- map ---- */
+const NYC = [40.73, -73.95];
 let leaflet = null;
 function renderMap(a) {
   const p = $("#tab-map"); p.textContent = ""; if (leaflet) { leaflet.remove(); leaflet = null; }
@@ -705,7 +706,7 @@ function renderMap(a) {
   }
   const mapDiv = el("div", { id: "map", role: "application", "aria-label": "Map of hospitals in the answer. Each hospital is also listed in the Tables tab." });
   p.append(mapDiv, legend, el("div", { class: "note", text: "Marker size = discharges. Positions are ZIP-code centroids, so they are approximate. Map © OpenStreetMap contributors." }));
-  const m = L.map(mapDiv, { zoomControl: true, attributionControl: true }).setView([42.9, -75.5], 6); leaflet = m;
+  const m = L.map(mapDiv, { zoomControl: true, attributionControl: true }).setView(NYC, 10); leaflet = m;
   let tileErrors = 0; const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 17, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(m);
   tiles.on("tileerror", () => { if (++tileErrors === 3) p.insertBefore(el("div", { class: "note", text: "Map tiles could not be loaded; hospital markers are still shown." }), legend); });
   const maxD = Math.max(1, ...pts.map(h => h.discharges || 0)), bounds = [];
@@ -717,7 +718,9 @@ function renderMap(a) {
     mk.bindPopup(() => popupFor(h), { maxWidth: 280 });
   });
   const fit = (pts.filter(h => h.focus).length ? pts.filter(h => h.focus) : pts).map(h => [h.lat, h.lon]);
-  if (fit.length) m.fitBounds(fit, { padding: [30, 30], maxZoom: 11 });
+  // The map tab is hidden while this runs (zero size), so fit again once it is shown.
+  m.refit = () => { m.invalidateSize(); if (fit.length) m.fitBounds(fit, { padding: [30, 30], maxZoom: 11 }); else m.setView(NYC, 10); };
+  m.refit(); m.needsFit = true;
   if (missing.length) p.append(el("div", { class: "note", text: "No map position for: " + missing.map(h => h.name).join("; ") }));
 }
 function popupFor(h) {
