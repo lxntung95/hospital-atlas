@@ -335,8 +335,9 @@ function newChat() {
   const c = { id: uid(), title: "New research", created: Date.now(), updated: Date.now(), model: pref("model", models.default.model), effort: pref("effort", models.default.effort), session_id: uid(), messages: [], needsSeed: false, titled: false };
   return c;
 }
+const whenBusy = () => toast("Wait for the current answer, or press Stop.");
 function startNew() {
-  if (busy) return toast("Wait for the current answer, or press Stop.");
+  if (busy) return whenBusy();
   if (current && current.messages.length === 0) { render(); return; }
   current = newChat(); render(); $("#input").focus(); closeDrawers();
 }
@@ -428,14 +429,14 @@ function rename(c, item) {
   input.addEventListener("blur", () => done(true));
 }
 function removeChat(c) {
-  if (busy && c === current) return toast("Wait for the current answer, or press Stop.");
+  if (busy && c === current) return whenBusy();
   const idx = memory.chats.indexOf(c); memory.chats.splice(idx, 1); saveStore();
   if (c === current) current = memory.chats.find(x => x.messages.length) || newChat();
   render();
   toast("Deleted “" + c.title.slice(0, 40) + "”", "Undo", () => { memory.chats.splice(Math.min(idx, memory.chats.length), 0, c); saveStore(); current = c; render(); });
 }
 function openChat(id) {
-  if (busy) return toast("Wait for the current answer, or press Stop.");
+  if (busy) return whenBusy();
   const c = memory.chats.find(x => x.id === id); if (!c) return;
   current = c; c.needsSeed = c.messages.length > 0; render(); closeDrawers();
 }
@@ -443,7 +444,7 @@ $("#search").addEventListener("input", renderList);
 $("#new-btn").addEventListener("click", startNew);
 $("#clear-btn").addEventListener("click", async () => {
   if (!memory.chats.some(c => c.messages.length)) return toast("Nothing to clear.");
-  if (busy) return toast("Wait for the current answer, or press Stop.");
+  if (busy) return whenBusy();
   if (await confirmDialog("Delete all saved research in this browser? This can't be undone.", "Delete all")) { memory.chats = []; saveStore(); current = newChat(); render(); toast("All saved research deleted."); }
 });
 
@@ -593,7 +594,8 @@ document.querySelector(".tabs").addEventListener("keydown", e => {
   const tabs = [...document.querySelectorAll(".tabs button")]; const i = tabs.indexOf(document.activeElement); if (i < 0) return;
   const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); showTab(n.dataset.tab);
 });
-function emptyPane(id, text) { const p = $("#" + id); p.textContent = ""; p.append(el("div", { class: "empty", text })); }
+const emptyNote = text => el("div", { class: "empty", text });
+function emptyPane(id, text) { const p = $("#" + id); p.textContent = ""; p.append(emptyNote(text)); }
 let renderedArt;
 function renderEvidence(art) {
   if (art && art === renderedArt) { showTab((current && current.tab) || "map"); return; }
@@ -604,7 +606,7 @@ function renderEvidence(art) {
 }
 function renderSources(art) {
   const p = $("#tab-sources"); p.textContent = "";
-  if (!art.sources || !art.sources.length) return p.append(el("div", { class: "empty", text: "This answer used no datasets." }));
+  if (!art.sources || !art.sources.length) return p.append(emptyNote("This answer used no datasets."));
   art.sources.forEach(s => p.append(el("div", { class: "src", id: "src-" + s.id },
     el("div", {}, el("b", { text: s.id }), " ", s.dataset), el("div", { class: "meta", text: s.period + " · retrieved " + s.retrieved_at + (s.note ? " · " + s.note : "") }),
     el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", text: "Open the exact query" }))));
@@ -612,7 +614,7 @@ function renderSources(art) {
 }
 function highlightSource(id) {
   document.querySelectorAll(".src.hl").forEach(x => x.classList.remove("hl"));
-  const n = document.getElementById("src-" + id); if (n) { n.classList.add("hl"); n.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
+  const n = document.getElementById("src-" + id); if (n) { n.classList.add("hl"); n.scrollIntoView({ block: "center", behavior: prefersReduced() ? "auto" : "smooth" }); }
 }
 /* ============ timeline, map, tables, charts ============ */
 const prefersReduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -621,8 +623,8 @@ const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n)
 /* ---- timeline: lanes per agent, built from tool_calls (live from /progress, or the final list) ---- */
 const TERMINAL = { "Cohort Retriever": "submit_cohort", "Analyst": "analyze", "Writer": "validate", "Critic": "review" };
 function laneStatus(agent, calls, finished) {
-  if (finished) return /Researcher R/.test(agent) && calls.some(c => c.name === "submit_finding" && /"status": ?"partial"/.test(c.result || "")) ? "partial" : "done";
-  if (/Researcher R/.test(agent)) { const f = calls.find(c => c.name === "submit_finding"); return f ? (/"status": ?"partial"/.test(f.result || "") ? "partial" : "done") : "running"; }
+  if (/Researcher R/.test(agent)) { const f = calls.find(c => c.name === "submit_finding"); return f ? (/"status": ?"partial"/.test(f.result || "") ? "partial" : "done") : finished ? "done" : "running"; }
+  if (finished) return "done";
   return TERMINAL[agent] && calls.some(c => c.name === TERMINAL[agent]) ? "done" : "running";
 }
 function laneNode(agent, calls, finished, open) {
@@ -692,7 +694,7 @@ function askAbout(h) {
 let leaflet = null;
 function renderMap(a) {
   const p = $("#tab-map"); p.textContent = ""; if (leaflet) { leaflet.remove(); leaflet = null; }
-  const all = a.cohort || []; if (!all.length) return p.append(el("div", { class: "empty", text: "No hospitals to map for this answer." }));
+  const all = a.cohort || []; if (!all.length) return p.append(emptyNote("No hospitals to map for this answer."));
   const pts = all.filter(h => h.lat != null && h.lon != null), missing = all.filter(h => h.lat == null || h.lon == null);
   const legend = el("div", { class: "legend", "aria-label": "Marker legend" });
   Object.values(QUAD).forEach(k => legend.append(el("span", {}, el("span", { class: "mk " + k.shape + " " + k.cls, style: "width:14px;height:14px" }, el("i")), k.label)));
@@ -759,7 +761,7 @@ function tableNode(t) {
 }
 function renderTables(a) {
   const p = $("#tab-tables"); p.textContent = "";
-  if (!(a.tables || []).length) return p.append(el("div", { class: "empty", text: "No tables for this answer." }));
+  if (!(a.tables || []).length) return p.append(emptyNote("No tables for this answer."));
   p.append(el("div", { class: "note", text: "Click a column heading to sort. Click a row to highlight it." })); a.tables.forEach(t => p.append(tableNode(t)));
 }
 
@@ -772,7 +774,7 @@ function altTable(caption, head, rows) {
 function renderCharts(a) {
   const p = $("#tab-charts"); p.textContent = ""; charts.forEach(c => c.destroy()); charts = [];
   const bars = a.charts && a.charts.payment_bars, sc = a.charts && a.charts.cost_quality_scatter;
-  if (!bars || !bars.items.length) return p.append(el("div", { class: "empty", text: "No chart data for this answer." }));
+  if (!bars || !bars.items.length) return p.append(emptyNote("No chart data for this answer."));
   const ink = cssv("--text"), muted = cssv("--muted"), grid = cssv("--grid"), accent = cssv("--accent"), surf = cssv("--surface");
   const refs = bars.references || {};
   p.append(el("h3", { text: `Average total payment by hospital, DRG ${bars.drg}` }));
