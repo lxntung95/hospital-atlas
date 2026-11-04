@@ -19,26 +19,19 @@ from atlas.tools import err, make_cohort, ok, tool
 
 HOOKS = RecordToolCalls()  # stateless: it writes into whichever request context the run carries
 RESEARCHERS = {"cost": (COST_RESEARCHER, "cost"), "quality": (QUALITY_RESEARCHER, "quality")}
-MIN_ROUND_S = 30
 
 
 def tuned(agent: Agent, c: RequestContext) -> Agent:
     """The agent as configured for this request: chosen model and reasoning effort. Never mutates the shared agent."""
     if c.model is None and not c.effort:
         return agent
-    kw = {}
-    if c.model is not None:
-        kw["model"] = c.model
-    if c.effort or c.model is not None:
-        # Only the agents that plan and write get the chosen reasoning effort. Researchers and the retriever just call tools,
-        # so extra reasoning there only adds latency (it made Balanced take 110 s).
-        eff = config.LEAD_EFFORT.get(c.effort, "low") if agent.name == "Lead" else config.WRITER_EFFORT.get(c.effort, "low") if agent.name == "Writer" else "low"
-        kw["model_settings"] = config.effort_settings(agent.model_settings, eff or "low", c.model_id)
-    return agent.clone(**kw)
+    # Only the Lead gets the chosen reasoning; the others just call tools or write, and extra reasoning only adds latency (it made Balanced take 110 s).
+    reasoning = config.effort(c.effort).lead if agent.name == "Lead" else "low"
+    return agent.clone(model_settings=config.effort_settings(agent.model_settings, reasoning), **({"model": c.model} if c.model is not None else {}))
 
 
 def turns(base: int, c: RequestContext) -> int:
-    return base + config.EXTRA_TURNS.get(c.effort, 0)  # do not start a round with less than this left after the writer reserve
+    return base + config.effort(c.effort).extra_turns
 
 
 # ---------------------------------------------------------------- cohort
@@ -130,9 +123,9 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
     low = 3 if c.rounds_used == 0 else 1  # first round fans out wide; gap rounds can be a single targeted task
     if not low <= len(tasks) <= 4:
         return err(f"{len(tasks)} tasks given", "round 1 needs 3 or 4 tasks: cost, quality outcomes, patient experience/safety" if low == 3 else "a gap round takes 1 to 4 tasks")
-    if c.rounds_used >= 1 + config.gap_rounds(c.effort):
+    if c.rounds_left <= 0:
         return err("round limit reached", "no more research rounds: call write_report with what you have")
-    if c.remaining() < config.WRITER_RESERVE_S + MIN_ROUND_S:
+    if not c.can_research():
         return err("budget exhausted", "write now: call write_report")
     for t in tasks:
         if t.cohort_handle not in c.cohorts:
@@ -157,7 +150,7 @@ async def _run_round(c: RequestContext, tasks: list[ResearchTask]) -> str:
     except Exception as e:  # the analysis must never sink the request
         c.record("Analyst", "analyze", {}, f"failed: {type(e).__name__}: {e}")
         analysis, gaps = None, []
-    return ok(round=c.rounds_used, rounds_left=1 + config.gap_rounds(c.effort) - c.rounds_used,
+    return ok(round=c.rounds_used, rounds_left=c.rounds_left,
               facts_count=len(analysis.facts) if analysis else 0, gaps=gaps,
               findings=[f.model_dump(exclude={"gaps"}) | {"gaps": [g.detail for g in f.gaps]} for f in findings],
               tables=[{"handle": t.id, "title": t.title, "rows": len(t.rows)} for t in c.tables.all()])
@@ -200,9 +193,6 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
     return render.render(v, c)
 
 
-CRITIC_S = 12  # seconds the Critic may take; a slow or failed Critic is skipped, never waited for
-
-
 def _critic_input(c: RequestContext, question: str) -> str:
     measures = json.loads((config.DATA_DIR / "measures.json").read_text())
     return json.dumps({"question": question, "facts": [{"label": f.label, "display": f.display} for f in c.facts[:80]],
@@ -224,17 +214,17 @@ def _critique_tasks(c: RequestContext, crit: Critique) -> list[ResearchTask]:
 
 async def run_critic(c: RequestContext, question: str) -> None:
     """Thinking mode only: an LLM reads the analysed facts against the question. Unanswered parts become known gaps (the Writer states
-    them); valid extra lookups run as one more gap round. Any failure or timeout is skipped so the answer is never delayed past CRITIC_S."""
+    them); valid extra lookups run as one more gap round. Any failure or timeout is skipped so the answer is never delayed past config.CRITIC_S."""
     c.stage("reviewing the analysis")
     try:
-        res = await asyncio.wait_for(Runner.run(tuned(CRITIC, c), _critic_input(c, question), context=c.child("Critic"), max_turns=2), CRITIC_S)
+        res = await asyncio.wait_for(Runner.run(tuned(CRITIC, c), _critic_input(c, question), context=c.child("Critic"), max_turns=2), config.CRITIC_S)
         crit = res.final_output if isinstance(res.final_output, Critique) else Critique.model_validate_json(str(res.final_output))
     except Exception as exc:
         c.record("Critic", "review", {}, f"skipped: {type(exc).__name__}")
         return
     tasks = _critique_tasks(c, crit)
     c.record("Critic", "review", {"unanswered": crit.unanswered[:3]}, f"{len(crit.unanswered)} unanswered, {len(tasks)} extra lookups")
-    if tasks and c.rounds_used < 1 + config.gap_rounds(c.effort) and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S:
+    if tasks and c.can_research():
         await _run_round(c, tasks)  # the Analyst re-runs and recomputes the gaps, so the Critic's notes would be overwritten: skip them
         return
     for u in crit.unanswered[:3]:  # nothing to look up: say so in the report (the Writer sees gaps; "can't tell you" lists unfillable ones)
@@ -265,12 +255,12 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     c = ctx.context
     if c.rounds_used == 0 and not reason:
         return err("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
-    if not reason and 1 <= c.rounds_used < 1 + config.gap_rounds(c.effort) and c.cohorts and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S + 15:
+    if not reason and c.rounds_used >= 1 and c.cohorts and c.can_research(15):
         tasks = _gap_tasks(c)  # the Lead skipped a fillable gap: run one deterministic gap round so the report is complete
         if tasks:
             c.record("Lead", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")
             await _run_round(c, tasks)
-    if c.effort == "high" and c.rounds_used >= 1 and c.facts and not reason and c.remaining() >= config.WRITER_RESERVE_S + CRITIC_S + 5:
+    if config.effort(c.effort).critic and c.rounds_used >= 1 and c.facts and not reason and c.remaining() >= config.WRITER_RESERVE_S + config.CRITIC_S + 5:
         await run_critic(c, c.question)
     return await compose(c, c.question, reason)
 

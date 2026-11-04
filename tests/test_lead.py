@@ -118,8 +118,7 @@ async def test_litellm_receives_timeout_and_retries(monkeypatch):
 
 async def test_model_call_cap_is_four():
     assert config.MODEL_CALLS == 4
-    gate = config._gate()
-    assert gate._value == 4
+    assert config.loop_semaphore("model", config.MODEL_CALLS)._value == 4
 
 
 async def test_partial_findings_are_labelled_in_report(ctx, monkeypatch):

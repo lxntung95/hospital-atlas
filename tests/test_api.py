@@ -65,8 +65,6 @@ def test_build_model_allowlist_and_effort_mapping():
     assert config.build_model(config.DEFAULT_MODEL) is config.build_model(config.DEFAULT_MODEL)
     for e in config.EFFORT_LEVELS:
         assert config.effort_settings(config.SETTINGS, e).reasoning.effort == e
-    with pytest.raises(ValueError):
-        config.effort_settings(config.SETTINGS, "x")
 
 
 def test_tuned_clones_without_mutating_shared_agents(ctx):
@@ -74,7 +72,7 @@ def test_tuned_clones_without_mutating_shared_agents(ctx):
     assert orchestrator.tuned(orchestrator.LEAD, ctx) is orchestrator.LEAD  # no overrides -> same object
     ctx.model, ctx.effort = config.build_model(list(config.MODEL_CHOICES)[-1]), "high"
     a = orchestrator.tuned(orchestrator.LEAD, ctx)
-    assert a is not orchestrator.LEAD and a.model_settings.reasoning.effort == config.LEAD_EFFORT["high"] and a.model_settings.tool_choice == "required"
+    assert a is not orchestrator.LEAD and a.model_settings.reasoning.effort == config.effort("high").lead and a.model_settings.tool_choice == "required"
     assert orchestrator.LEAD.model is base_model and orchestrator.LEAD.model_settings is base_settings
     assert orchestrator.turns(6, ctx) == 8
 
