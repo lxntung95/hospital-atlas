@@ -41,17 +41,21 @@ MODEL = LimitedModel(model=MODEL_ID, api_key="unused")  # api_key unused: Vertex
 # vertex_location global: Google routes each call to any region with capacity. timeout/num_retries are passed to litellm.acompletion.
 SETTINGS = ModelSettings(extra_args={"vertex_location": "global", "timeout": 45, "num_retries": 2})
 
-# Models the UI may choose. Each was verified through Vertex (global location) on 2026-11-03; others returned 404.
+# Models the UI may choose. Each was verified through Vertex on 2026-11-04. Measured on the Q2 question at Fast effort:
+# flash-lite 16 s, 3.5 Flash 126 s, 3.1 Pro 132 s. Not usable on this project: Claude (Vertex 429: no Anthropic quota), Grok (not enabled),
+# gpt-oss-120b (reachable in us-central1 but it did not drive the tool loop reliably: 180-240 s or failures).
 MODEL_CHOICES = {
-    "vertex_ai/gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fastest)",
-    "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash",
+    "vertex_ai/gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite (fast)",
+    "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash (slower)",
+    "vertex_ai/gemini-3.1-pro-preview": "Gemini 3.1 Pro preview (slowest)",
 }
+MODEL_LOCATION: dict[str, str] = {}  # per-model Vertex location override; everything is "global" today
 if MODEL_ID not in MODEL_CHOICES:  # an ATLAS_MODEL override stays selectable
     MODEL_CHOICES[MODEL_ID] = MODEL_ID
 DEFAULT_MODEL = MODEL_ID
-EFFORT_LEVELS = {"low": "Fast", "medium": "Balanced", "high": "Thorough"}
-DEFAULT_EFFORT = "low"  # measured on Q2: low 18 s, medium 68 s, high 67 s
-EXTRA_TURNS = {"low": 0, "medium": 0, "high": 2}  # Thorough lets each researcher use a couple more tool turns
+EFFORT_LEVELS = {"low": "Fast", "medium": "Balanced", "high": "Thinking"}
+DEFAULT_EFFORT = "low"  # see Phase 11 notes for measured latencies
+EXTRA_TURNS = {"low": 0, "medium": 0, "high": 2}  # Thinking lets each researcher use a couple more tool turns
 _models: dict[str, LimitedModel] = {MODEL_ID: MODEL}
 
 
@@ -64,16 +68,25 @@ def build_model(model_id: str) -> LimitedModel:
     return _models[model_id]
 
 
-def effort_settings(base: ModelSettings, effort: str) -> ModelSettings:
-    """Copy of `base` with the reasoning effort for this request."""
+def effort_settings(base: ModelSettings, effort: str, model_id: str | None = None) -> ModelSettings:
+    """Copy of `base` with the reasoning effort (and the model's Vertex location) for this request."""
     if effort not in EFFORT_LEVELS:
         raise ValueError(f"unknown effort {effort!r}; choose one of: {', '.join(EFFORT_LEVELS)}")
-    return replace(base, reasoning=Reasoning(effort=effort))
+    extra = dict(base.extra_args or {})
+    if model_id in MODEL_LOCATION:
+        extra["vertex_location"] = MODEL_LOCATION[model_id]
+    return replace(base, reasoning=Reasoning(effort=effort), extra_args=extra)
 
 
 # --- Research budgets (seconds) and loop caps ---
 
-MAX_GAP_ROUNDS = 2
+MAX_GAP_ROUNDS = 2  # upper bound (Thinking); Fast and Balanced get 1, see gap_rounds()
+GAP_ROUNDS = {"low": 1, "medium": 1, "high": 2}
+WRITER_EFFORT = {"low": "low", "medium": "low", "high": "medium"}  # the Writer timed out at higher reasoning
+
+
+def gap_rounds(effort: str) -> int:
+    return GAP_ROUNDS.get(effort, 1)
 REQUEST_S = 240
 RESEARCHER_S = 60
 RETRIEVER_S = 30

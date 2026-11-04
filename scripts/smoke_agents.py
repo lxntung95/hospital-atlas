@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 set_tracing_disabled(True)  # traces upload to OpenAI by default, which needs an OpenAI key
 
-MODEL = LitellmModel(model="vertex_ai/gemini-3.5-flash-lite", api_key="unused")
+MODEL = LitellmModel(model="vertex_ai/gemini-3.5-flash", api_key="unused")
 SETTINGS = ModelSettings(tool_choice="required", extra_args={"vertex_location": "global"})
 
 
