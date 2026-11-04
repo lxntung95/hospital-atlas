@@ -103,7 +103,7 @@ Mapping to the assignment's deep-research checklist:
 | Time budget and failure handling | 240 s request budget, per-agent timeouts, `render_partial` safety net, `ATLAS_FAULT=timeout\|error` fault injection |
 | Deployment | Cloud Run from GitHub `main` (continuous deploy), IAP restricted to columbia.edu |
 
-Models: `vertex_ai/gemini-3.5-flash-lite` (default) and `gemini-3.5-flash`, selectable in the UI with an effort setting (Fast / Balanced / Thorough) via LiteLLM.
+Models (selectable in the UI, through Vertex AI and LiteLLM): Gemini 3.5 Flash-Lite (default, about 20 s per question), Gemini 3.5 Flash and Gemini 3.1 Pro preview (both much slower, 2 minutes or more). Claude, Grok and OpenAI gpt-oss were tried and are not usable on this project (no Anthropic quota, xAI not enabled, gpt-oss does not drive the tool loop reliably). Effort: Fast / Balanced / Thinking. It changes the reasoning of the Lead and Writer only, and the number of gap rounds (1, 1, 2); researchers always run fast. Measured on Q2 with Flash-Lite: 23 s / 26 s / 63 s.
 
 # DATA SOURCES
 

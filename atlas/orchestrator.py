@@ -29,8 +29,11 @@ def tuned(agent: Agent, c: RequestContext) -> Agent:
     kw = {}
     if c.model is not None:
         kw["model"] = c.model
-    if c.effort:
-        kw["model_settings"] = config.effort_settings(agent.model_settings, c.effort)
+    if c.effort or c.model is not None:
+        # Only the agents that plan and write get the chosen reasoning effort. Researchers and the retriever just call tools,
+        # so extra reasoning there only adds latency (it made Balanced take 110 s).
+        eff = c.effort if agent.name == "Lead" else config.WRITER_EFFORT.get(c.effort, "low") if agent.name == "Writer" else "low"
+        kw["model_settings"] = config.effort_settings(agent.model_settings, eff or "low", c.model_id)
     return agent.clone(**kw)
 
 
@@ -127,7 +130,7 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
     low = 3 if c.rounds_used == 0 else 1  # first round fans out wide; gap rounds can be a single targeted task
     if not low <= len(tasks) <= 4:
         return err(f"{len(tasks)} tasks given", "round 1 needs 3 or 4 tasks: cost, quality outcomes, patient experience/safety" if low == 3 else "a gap round takes 1 to 4 tasks")
-    if c.rounds_used >= 1 + config.MAX_GAP_ROUNDS:
+    if c.rounds_used >= 1 + config.gap_rounds(c.effort):
         return err("round limit reached", "no more research rounds: call write_report with what you have")
     if c.remaining() < config.WRITER_RESERVE_S + MIN_ROUND_S:
         return err("budget exhausted", "write now: call write_report")
@@ -154,7 +157,7 @@ async def _run_round(c: RequestContext, tasks: list[ResearchTask]) -> str:
     except Exception as e:  # the analysis must never sink the request
         c.record("Analyst", "analyze", {}, f"failed: {type(e).__name__}: {e}")
         analysis, gaps = None, []
-    return ok(round=c.rounds_used, rounds_left=1 + config.MAX_GAP_ROUNDS - c.rounds_used,
+    return ok(round=c.rounds_used, rounds_left=1 + config.gap_rounds(c.effort) - c.rounds_used,
               facts_count=len(analysis.facts) if analysis else 0, gaps=gaps,
               findings=[f.model_dump(exclude={"gaps"}) | {"gaps": [g.detail for g in f.gaps]} for f in findings],
               tables=[{"handle": t.id, "title": t.title, "rows": len(t.rows)} for t in c.tables.all()])
@@ -221,7 +224,7 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     c = ctx.context
     if c.rounds_used == 0 and not reason:
         return err("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
-    if not reason and 1 <= c.rounds_used < 1 + config.MAX_GAP_ROUNDS and c.cohorts and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S + 15:
+    if not reason and 1 <= c.rounds_used < 1 + config.gap_rounds(c.effort) and c.cohorts and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S + 15:
         tasks = _gap_tasks(c)  # the Lead skipped a fillable gap: run one deterministic gap round so the report is complete
         if tasks:
             c.record("Lead", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")

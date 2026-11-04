@@ -37,7 +37,7 @@ async def test_three_researchers_run_in_parallel(ctx, monkeypatch):
     out = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2, "quality"), task(3, "quality")]))
     assert time.monotonic() - t0 < 0.8  # sequential would be >= 0.9
     assert [f["agent"] for f in out["findings"]] == ["Cost Researcher R1", "Quality Researcher R2", "Quality Researcher R3"]
-    assert out["round"] == 1 and out["rounds_left"] == 2 and all(f["status"] == "ok" for f in out["findings"])
+    assert out["round"] == 1 and out["rounds_left"] == config.gap_rounds(ctx.effort) and all(f["status"] == "ok" for f in out["findings"])
 
 
 async def test_error_and_timeout_become_partial_findings(ctx, monkeypatch):
@@ -83,9 +83,10 @@ async def test_validation_errors(ctx, monkeypatch):
 
 async def test_round_cap_and_budget(ctx, monkeypatch):
     prepare(ctx)
+    ctx.effort = "high"  # Thinking allows the maximum number of gap rounds
     stub_run(monkeypatch, lambda a, c: asyncio.sleep(0))
     assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
-    for _ in range(config.MAX_GAP_ROUNDS):  # gap rounds may be a single task
+    for _ in range(config.gap_rounds("high")):  # gap rounds may be a single task
         assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1)]))
     r = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
     assert "round limit" in r["error"]
@@ -119,3 +120,8 @@ async def test_deterministic_fallback_flags_out_of_scope(ctx, monkeypatch):
     monkeypatch.setattr(orchestrator.Runner, "run", boom)
     out = json.loads(await call(orchestrator.resolve_cohort, ctx, request="How does Boston do on knee replacement?"))
     assert out["unresolved"] and "boston" in out["unresolved"][0]
+
+
+def test_gap_rounds_and_effort_labels():
+    assert config.gap_rounds("low") == 1 and config.gap_rounds("medium") == 1 and config.gap_rounds("high") == 2
+    assert config.EFFORT_LEVELS["high"] == "Thinking"

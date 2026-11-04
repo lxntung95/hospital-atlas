@@ -519,7 +519,7 @@ function setControls() {
   if (!models.models.some(m => m.id === current.model)) current.model = models.default.model;
   sel.value = current.model;
   const seg = $("#effort"); seg.textContent = "";
-  models.efforts.forEach(e => seg.append(el("button", { type: "button", text: e.label, "aria-pressed": String(e.id === current.effort), "data-effort": e.id, title: e.id === "low" ? "Fastest (about 20 s)" : e.id === "medium" ? "More reasoning (about a minute)" : "Most reasoning (about a minute)" })));
+  models.efforts.forEach(e => seg.append(el("button", { type: "button", text: e.label, "aria-pressed": String(e.id === current.effort), "data-effort": e.id, title: e.id === "low" ? "Fastest" : e.id === "medium" ? "More reasoning for planning and writing" : "Most reasoning for planning and writing; slowest" })));
   const stopping = !!busy; $("#send").textContent = stopping ? "Stop" : "Send"; $("#send").classList.toggle("stop", stopping);
   sel.disabled = stopping; seg.querySelectorAll("button").forEach(b => b.disabled = stopping);
 }
