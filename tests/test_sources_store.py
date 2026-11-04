@@ -4,15 +4,15 @@ from atlas.store import TableStore
 
 
 def test_data_api_url_is_reproducible():
-    url = data_api_url("690ddc6c-2767-4618-b277-420ffb2bf27c", {"Rndrng_Prvdr_State_Abrvtn": "NY", "DRG_Cd": "470"}, size=5000)
+    url = data_api_url("690ddc6c-2767-4618-b277-420ffb2bf27c", {"Rndrng_Prvdr_State_Abrvtn": "NY", "DRG_Cd": "470"})
     assert url == ("https://data.cms.gov/data-api/v1/dataset/690ddc6c-2767-4618-b277-420ffb2bf27c/data"
-                   "?filter[Rndrng_Prvdr_State_Abrvtn]=NY&filter[DRG_Cd]=470&size=5000")
+                   "?filter[Rndrng_Prvdr_State_Abrvtn]=NY&filter[DRG_Cd]=470")
 
 
 def test_provider_url_with_in_operator():
-    url = provider_url("ynj2-r877", [("state", "=", "NY"), ("measure_id", "IN", ["MORT_30_HF", "MORT_30_PN"])], limit=1500)
+    url = provider_url("ynj2-r877", [("state", "=", "NY"), ("measure_id", "IN", ["MORT_30_HF", "MORT_30_PN"])])
     assert "conditions[1][value][]=MORT_30_HF&conditions[1][value][]=MORT_30_PN&conditions[1][operator]=IN" in url
-    assert url.endswith("limit=1500&count=true")
+    assert url.endswith("count=true")
 
 
 def test_registry_dedupes_and_numbers():
@@ -26,7 +26,7 @@ def test_registry_dedupes_and_numbers():
 
 def test_table_store_handles():
     store = TableStore()
-    t = store.add("rows", [{"x": i} for i in range(10)], source_id="S1")
+    t = store.add("rows", [{"x": i} for i in range(10)], source_ids=["S1"])
     assert t.id == "T1" and t.columns == ["x"]
     assert store.get("T1") is t
 

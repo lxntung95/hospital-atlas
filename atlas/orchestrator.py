@@ -15,10 +15,11 @@ from atlas import analyst, cms, config, crosswalk, render, validate
 from atlas.agents import COHORT_RETRIEVER, CRITIC, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
 from atlas.context import RecordToolCalls, RequestContext
 from atlas.schemas import CohortSpec, Critique, Finding, Gap, Report, ResearchTask
-from atlas.tools import err, make_cohort, ok, tool
+from atlas.tools import ToolError, make_cohort, ok, tool
 
 HOOKS = RecordToolCalls()  # stateless: it writes into whichever request context the run carries
-RESEARCHERS = {"cost": (COST_RESEARCHER, "cost"), "quality": (QUALITY_RESEARCHER, "quality")}
+RESEARCHERS = {"cost": COST_RESEARCHER, "quality": QUALITY_RESEARCHER}
+CLARIFY_MARK = "Reply with one of these"  # the UI looks for the same text to show the options as buttons
 
 
 def tuned(agent: Agent, c: RequestContext) -> Agent:
@@ -34,11 +35,20 @@ def turns(base: int, c: RequestContext) -> int:
     return base + config.effort(c.effort).extra_turns
 
 
+async def run_agent(agent: Agent, c: RequestContext, owner: str, payload: str, model: type, timeout: float | None, max_turns: int):
+    """One nested agent run in its own context view, tuned to this request and time-limited; the output is parsed as `model`."""
+    agent = tuned(agent, c)
+    if agent.name != owner:
+        agent = agent.clone(name=owner)
+    out = (await asyncio.wait_for(Runner.run(agent, payload, context=c.child(owner), hooks=HOOKS, max_turns=max_turns), timeout)).final_output
+    return out if isinstance(out, model) else model.model_validate_json(str(out))
+
+
 # ---------------------------------------------------------------- cohort
 
 async def _deterministic_spec(c: RequestContext, message: str) -> CohortSpec | None:
     """Fallback when the Retriever fails: build the cohort from crosswalk hints only."""
-    hospitals = (await cms.general_info_ny(c.client)).rows
+    hospitals = (await cms.hospitals(c.client)).values()
     d = crosswalk.detect(message, hospitals)
     by_name = {h.name: h.ccn for h in hospitals}
     focus = [by_name[n] for n in d.hospital_hints if n in by_name]
@@ -60,24 +70,19 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
     """
     c = ctx.context
     c.stage("finding hospitals")
-    spec = None
     try:
-        result = await asyncio.wait_for(
-            Runner.run(tuned(COHORT_RETRIEVER, c), request, context=c.child("Cohort Retriever"), hooks=HOOKS, max_turns=turns(MAX_TURNS["retriever"], c)), config.RETRIEVER_S)
-        spec = CohortSpec.model_validate_json(result.final_output)
+        spec = await run_agent(COHORT_RETRIEVER, c, "Cohort Retriever", request, CohortSpec, config.RETRIEVER_S, turns(MAX_TURNS["retriever"], c))
     except Exception:
         spec = await _deterministic_spec(c, request)
     if spec is None:
-        return err("could not build a cohort", "ask the user for a hospital name, county or condition")
-    hospitals = (await cms.general_info_ny(c.client)).rows
-    names = {h.ccn: h.name for h in hospitals}
+        raise ToolError("could not build a cohort", "ask the user for a hospital name, county or condition")
+    hospitals = await cms.hospitals(c.client)
     if not spec.focus_ccns:  # "Bronx hospitals vs the rest of NY": the named region is the focus even if the cohort is statewide
-        _region, counties = crosswalk.find_region(request)
-        wanted = {x.casefold() for x in counties}
-        spec.focus_ccns = [h.ccn for h in hospitals if h.type == "Acute Care Hospitals" and h.county.casefold() in wanted and h.ccn in c.cohorts[spec.cohort_handle]["ccns"]][:12]
+        members = c.cohorts[spec.cohort_handle]["ccns"]
+        spec.focus_ccns = [h.ccn for h in cms.acute(hospitals, crosswalk.find_region(request)[1]) if h.ccn in members][:12]
     c.cohorts[spec.cohort_handle]["spec"] = spec.model_dump()
     return ok(cohort_handle=spec.cohort_handle, n=len(spec.hospital_ccns), region_label=spec.region_label,
-              focus_hospitals=[{"ccn": x, "name": names.get(x, x)} for x in spec.focus_ccns], drg_codes=spec.drg_codes,
+              focus_hospitals=[{"ccn": x, "name": hospitals[x].name if x in hospitals else x} for x in spec.focus_ccns], drg_codes=spec.drg_codes,
               measure_ids=spec.measure_ids, unresolved=spec.unresolved)
 
 
@@ -86,25 +91,20 @@ async def resolve_cohort(ctx: RunContextWrapper[RequestContext], request: str) -
 def _partial(task: ResearchTask, agent_name: str, c: RequestContext, reason: str) -> Finding:
     """A finding for a researcher that timed out or failed: keep any tables it managed to store."""
     c.partials.append(f"{task.kind} task {task.id} ({agent_name}) did not finish: {reason}")
-    tables = [t.id for t in c.tables.all() if t.meta.get("owner") == agent_name]
-    sources = sorted({s for t in c.tables.all() if t.meta.get("owner") == agent_name for s in t.meta.get("source_ids", [])})
-    return Finding(task_id=task.id, status="partial", agent=agent_name, table_handles=tables, source_ids=sources,
+    mine = [t for t in c.tables.all() if t.meta.get("owner") == agent_name]
+    return Finding(task_id=task.id, status="partial", agent=agent_name, table_handles=[t.id for t in mine], source_ids=sorted({s for t in mine for s in t.source_ids}),
                    summary=f"{agent_name} did not finish ({reason}); any tables it stored are attached.",
                    gaps=[Gap(kind="missing_metric", detail=f"{task.kind} task {task.id} incomplete: {reason}", fillable=True)])
 
 
 async def _run_one(c: RequestContext, task: ResearchTask, name: str, timeout: float) -> Finding:
-    agent, key = RESEARCHERS[task.kind]
-    child = c.child(name)
     try:
         fault = os.environ.get("ATLAS_FAULT", "")  # test/eval switch: break every cost researcher
         if fault and task.kind == "cost":
             if fault == "timeout":
                 raise asyncio.TimeoutError
             raise RuntimeError("injected fault")
-        result = await asyncio.wait_for(
-            Runner.run(tuned(agent, c).clone(name=name), task.model_dump_json(), context=child, hooks=HOOKS, max_turns=turns(MAX_TURNS[key], c)), timeout)
-        finding = Finding.model_validate_json(result.final_output)
+        finding = await run_agent(RESEARCHERS[task.kind], c, name, task.model_dump_json(), Finding, timeout, turns(MAX_TURNS[task.kind], c))
         return finding.model_copy(update={"task_id": task.id, "agent": name})
     except asyncio.TimeoutError:
         return _partial(task, name, c, f"timed out after {timeout:.0f}s")
@@ -122,14 +122,14 @@ async def dispatch_researchers(ctx: RunContextWrapper[RequestContext], tasks: li
     c = ctx.context
     low = 3 if c.rounds_used == 0 else 1  # first round fans out wide; gap rounds can be a single targeted task
     if not low <= len(tasks) <= 4:
-        return err(f"{len(tasks)} tasks given", "round 1 needs 3 or 4 tasks: cost, quality outcomes, patient experience/safety" if low == 3 else "a gap round takes 1 to 4 tasks")
+        raise ToolError(f"{len(tasks)} tasks given", "round 1 needs 3 or 4 tasks: cost, quality outcomes, patient experience/safety" if low == 3 else "a gap round takes 1 to 4 tasks")
     if c.rounds_left <= 0:
-        return err("round limit reached", "no more research rounds: call write_report with what you have")
+        raise ToolError("round limit reached", "no more research rounds: call write_report with what you have")
     if not c.can_research():
-        return err("budget exhausted", "write now: call write_report")
+        raise ToolError("budget exhausted", "write now: call write_report")
     for t in tasks:
         if t.cohort_handle not in c.cohorts:
-            return err(f"unknown cohort handle {t.cohort_handle!r}", f"known handles: {', '.join(c.cohorts) or 'none'}")
+            raise ToolError(f"unknown cohort handle {t.cohort_handle!r}", f"known handles: {', '.join(c.cohorts) or 'none'}")
     return await _run_round(c, tasks)
 
 
@@ -165,9 +165,7 @@ def _writer_input(c: RequestContext, question: str) -> dict:
 
 
 async def _write(c: RequestContext, payload: str) -> Report | None:
-    result = await Runner.run(tuned(WRITER, c), payload, context=c.child("Writer"), max_turns=2)
-    out = result.final_output
-    return out if isinstance(out, Report) else Report.model_validate_json(str(out))
+    return await run_agent(WRITER, c, "Writer", payload, Report, None, 2)
 
 
 async def compose(c: RequestContext, question: str, reason: str = "") -> str:
@@ -194,22 +192,25 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
 
 
 def _critic_input(c: RequestContext, question: str) -> str:
-    measures = json.loads((config.DATA_DIR / "measures.json").read_text())
     return json.dumps({"question": question, "facts": [{"label": f.label, "display": f.display} for f in c.facts[:80]],
-                       "known_gaps": [g.detail for g in c.gaps], "allowed_measure_ids": sorted(measures),
+                       "known_gaps": [g.detail for g in c.gaps], "allowed_measure_ids": sorted(crosswalk.measures()),
                        "allowed_drgs": sorted({r["drg"] for t in c.tables.all() for r in t.rows if isinstance(r.get("drg"), int)})})
 
 
+def _new_tasks(c: RequestContext, specs: list[tuple]) -> list[ResearchTask]:
+    """Research tasks for the latest cohort from (kind, question, drg_codes, measure_ids) tuples, with fresh ids R<n>."""
+    handle, n = list(c.cohorts)[-1], c.counters["researchers"]
+    return [ResearchTask(id=f"R{n + i}", kind=k, question=q, cohort_handle=handle, drg_codes=d, measure_ids=m) for i, (k, q, d, m) in enumerate(specs, 1)]
+
+
 def _critique_tasks(c: RequestContext, crit: Critique) -> list[ResearchTask]:
-    """Validate the Critic's suggestions against the real measure list and the DRGs already seen; drop anything invented."""
-    measures = set(json.loads((config.DATA_DIR / "measures.json").read_text()))
-    handle, out = list(c.cohorts)[-1], []
+    """Validate the Critic's suggestions against the real measure list; drop anything invented."""
+    known, specs = crosswalk.measures(), []
     for t in crit.tasks[:2]:
-        drgs, ms = [d for d in t.drg_codes if 100 <= d <= 999][:3], [m for m in t.measure_ids if m in measures][:4]
+        drgs, ms = [d for d in t.drg_codes if 100 <= d <= 999][:3], [m for m in t.measure_ids if m in known][:4]
         if (t.kind == "cost" and drgs) or (t.kind == "quality" and ms):
-            n = c.counters.get("researchers", 0) + len(out) + 1
-            out.append(ResearchTask(id=f"R{n}", kind=t.kind, question=t.why, cohort_handle=handle, drg_codes=drgs, measure_ids=ms))
-    return out
+            specs.append((t.kind, t.why, drgs, ms))
+    return _new_tasks(c, specs)
 
 
 async def run_critic(c: RequestContext, question: str) -> None:
@@ -217,8 +218,7 @@ async def run_critic(c: RequestContext, question: str) -> None:
     them); valid extra lookups run as one more gap round. Any failure or timeout is skipped so the answer is never delayed past config.CRITIC_S."""
     c.stage("reviewing the analysis")
     try:
-        res = await asyncio.wait_for(Runner.run(tuned(CRITIC, c), _critic_input(c, question), context=c.child("Critic"), max_turns=2), config.CRITIC_S)
-        crit = res.final_output if isinstance(res.final_output, Critique) else Critique.model_validate_json(str(res.final_output))
+        crit = await run_agent(CRITIC, c, "Critic", _critic_input(c, question), Critique, config.CRITIC_S, 2)
     except Exception as exc:
         c.record("Critic", "review", {}, f"skipped: {type(exc).__name__}")
         return
@@ -232,17 +232,14 @@ async def run_critic(c: RequestContext, question: str) -> None:
 
 
 def _gap_tasks(c: RequestContext) -> list[ResearchTask]:
-    handle = list(c.cohorts)[-1]
-    out, seen = [], set()
+    specs, seen = [], set()
     for g in c.gaps:
-        t = g.suggested_task if getattr(g, "fillable", False) else None
-        key = json.dumps(t, sort_keys=True) if t else None
-        if not t or key in seen or len(out) >= 3:
-            continue
-        seen.add(key)
-        n = c.counters.get("researchers", 0) + len(out) + 1
-        out.append(ResearchTask(id=f"R{n}", kind=t["kind"], question=g.detail, cohort_handle=handle, drg_codes=t.get("drg_codes", []), measure_ids=t.get("measure_ids", [])))
-    return out
+        t = g.suggested_task if g.fillable else None
+        key = json.dumps(t, sort_keys=True)
+        if t and key not in seen and len(specs) < 3:
+            seen.add(key)
+            specs.append((t["kind"], g.detail, t.get("drg_codes", []), t.get("measure_ids", [])))
+    return _new_tasks(c, specs)
 
 
 @tool
@@ -254,7 +251,7 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     """
     c = ctx.context
     if c.rounds_used == 0 and not reason:
-        return err("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
+        raise ToolError("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
     if not reason and c.rounds_used >= 1 and c.cohorts and c.can_research(15):
         tasks = _gap_tasks(c)  # the Lead skipped a fillable gap: run one deterministic gap round so the report is complete
         if tasks:
@@ -271,7 +268,7 @@ CLARIFY_FALLBACK = {"question": "Which part of New York hospital care should I l
 
 
 def clarification_text(question: str, options: list[str]) -> str:
-    return "## " + question.strip() + "\n\n" + "\n".join(f"- {o}" for o in options[:4]) + "\n\nReply with one of these, or tell me the hospital, condition and region you care about."
+    return "## " + question.strip() + "\n\n" + "\n".join(f"- {o}" for o in options[:4]) + "\n\n" + CLARIFY_MARK + ", or tell me the hospital, condition and region you care about."
 
 
 @tool
@@ -284,11 +281,11 @@ async def ask_clarifying_question(ctx: RunContextWrapper[RequestContext], questi
     """
     c = ctx.context
     if c.prev_clarified:
-        return err("already asked", "do not ask again: choose a reasonable scope (statewide, the most common DRG) and call resolve_cohort")
+        raise ToolError("already asked", "do not ask again: choose a reasonable scope (statewide, the most common DRG) and call resolve_cohort")
     if c.rounds_used > 0:
-        return err("research already started", "call write_report")
+        raise ToolError("research already started", "call write_report")
     if len(options) < 3:
-        return err("need 3 or 4 options", "give concrete options: a condition or procedure, a region, cost versus quality")
+        raise ToolError("need 3 or 4 options", "give concrete options: a condition or procedure, a region, cost versus quality")
     c.clarified = True
     return clarification_text(question, options)
 
@@ -359,8 +356,7 @@ async def _rescue(ctx: RequestContext, reason: str, write: bool) -> str:
 async def _run_lead(ctx: RequestContext, message: str, session_id: str) -> str:
     session = SQLiteSession(session_id, config.SESSIONS_DB)
     first_turn = not await session.get_items(limit=1)
-    hospitals = (await cms.general_info_ny(ctx.client)).rows
-    d = crosswalk.detect(message, hospitals)
+    d = crosswalk.detect(message, (await cms.hospitals(ctx.client)).values())
     vague = first_turn and d.vague and not d.out_of_scope and not ctx.prev_clarified
     result = await Runner.run(tuned(LEAD_CLARIFY if vague else LEAD, ctx), message + _hints(d), context=ctx, hooks=HOOKS, session=session, max_turns=turns(8, ctx))
     if vague and not ctx.clarified:
@@ -396,7 +392,7 @@ async def answer(message: str, session_id: str, client=None, model_id: str | Non
     try:
         if history:
             await seed_history(SQLiteSession(session_id, config.SESSIONS_DB), history)
-            ctx.prev_clarified = ctx.prev_clarified or (history[-1].get("role") == "assistant" and "Reply with one of these" in str(history[-1].get("content")))
+            ctx.prev_clarified = ctx.prev_clarified or (history[-1].get("role") == "assistant" and CLARIFY_MARK in str(history[-1].get("content")))
         text = await asyncio.wait_for(_run_lead(ctx, message, session_id), config.REQUEST_S)
     except asyncio.TimeoutError:
         text = await _rescue(ctx, "the time limit was reached", write=False)
@@ -404,8 +400,7 @@ async def answer(message: str, session_id: str, client=None, model_id: str | Non
         text = await _rescue(ctx, f"{type(exc).__name__} in the research loop", write=ctx.remaining() > config.WRITER_RESERVE_S)
     _CLARIFIED[session_id] = ctx.clarified
     try:
-        hospitals = {h.ccn: h for h in (await cms.general_info_ny(ctx.client)).rows}
-        ctx.artifacts = render.build_artifacts(ctx, hospitals)
+        ctx.artifacts = render.build_artifacts(ctx, await cms.hospitals(ctx.client))
     except Exception:
         ctx.artifacts = None
     return Answer(text, ctx.tool_calls, ctx)

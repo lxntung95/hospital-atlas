@@ -23,9 +23,9 @@ set_tracing_disabled(True)
 
 async def warm_cache():
     """Fetch the NY slices in the background so the first question does not pay for them. Never blocks startup."""
-    for fetch in (cms.general_info_ny, cms.ny_inpatient, cms.hrrp_ny, cms.complications_ny, cms.complications_national, cms.hcahps_star_ny):
+    for spec in cms.NY_SLICES:
         with contextlib.suppress(Exception):  # a failed warm-up just means the first request fetches (or falls back)
-            await fetch()
+            await get_client().get_slice(spec)
 
 
 @contextlib.asynccontextmanager

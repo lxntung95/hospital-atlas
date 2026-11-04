@@ -1,5 +1,7 @@
 """Adapters normalise CMS text into typed rows. Uses a fake client, no network."""
 
+from dataclasses import replace
+
 from atlas import cms
 from atlas.http import Fetched
 
@@ -10,7 +12,7 @@ class FakeClient:
 
     async def get_slice(self, spec):
         self.spec = spec
-        return self.f
+        return replace(self.f, url=spec.url)
 
 
 def test_clean_and_num():

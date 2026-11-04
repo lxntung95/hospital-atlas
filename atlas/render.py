@@ -1,9 +1,8 @@
 """Markdown rendering. No number is formatted here: every figure comes from a Fact display or a derived-table display column."""
 
-import json
-
-from atlas.config import DATA_DIR
 from atlas.context import RequestContext
+from atlas.crosswalk import load_json
+from atlas.sources import sid_key
 from atlas.validate import Audit, Validated, caveats
 
 RANK_ROWS = 10
@@ -24,42 +23,36 @@ def _marks(ids) -> str:
 
 
 def rank_table(ctx: RequestContext) -> str:
-    try:
-        t = ctx.tables.get("T_rank")
-    except KeyError:
-        t = None
+    t = ctx.tables.find("T_rank")
     if not t or not t.rows:
         return ""
     rows = t.rows[:RANK_ROWS] + [r for r in t.rows[RANK_ROWS:] if r.get("focus")]
     body = [[r["rank"], r["name"] + (" (focus)" if r.get("focus") else ""), r["city"], r["payment_display"], r["vs_ny_display"], r["discharges"], "small sample" if r.get("small_n") else ""]
             for r in rows]
-    cap = f"**{t.title}** (highest payment first; {len(t.rows)} ranked) {_marks(t.meta.get('source_ids', []))}"
+    cap = f"**{t.title}** (highest payment first; {len(t.rows)} ranked) {_marks(t.source_ids)}"
     return cap + "\n\n" + _table(["#", "Hospital", "City", "Avg total payment", "vs NY avg", "Medicare discharges", "Note"], body)
 
 
 def quadrant_table(ctx: RequestContext) -> str:
-    try:
-        t = ctx.tables.get("T_quadrant")
-    except KeyError:
-        t = None
+    t = ctx.tables.find("T_quadrant")
     if not t or not t.rows:
         return ""
     focus = [r for r in t.rows if r.get("focus")]  # asked-about hospitals first, then the rest of the cohort up to the row cap
     rows = (focus + [r for r in t.rows if not r.get("focus")])[:RANK_ROWS]
     body = [[r["name"], r["payment_display"], r["quality_measure"] or "-", r["quality_display"] or "-", r["quadrant"] if r["quadrant"] != "insufficient data" else f"insufficient data ({r['reason']})"]
             for r in rows]
-    cap = f"**{t.title}** {_marks(t.meta.get('source_ids', []))}"
+    cap = f"**{t.title}** {_marks(t.source_ids)}"
     return cap + "\n\n" + _table(["Hospital", "Avg total payment", "Quality measure", "Value", "Group"], body)
 
 
+def used_sources(ctx: RequestContext) -> list:
+    """The sources behind at least one fact, in S# order."""
+    ids = sorted({s for f in ctx.facts for s in f.source_ids}, key=sid_key)
+    return [s for s in map(ctx.sources.get, ids) if s]
+
+
 def sources_section(ctx: RequestContext) -> str:
-    used = sorted({s for f in ctx.facts for s in f.source_ids}, key=lambda s: int(s[1:]))
-    lines = []
-    for sid in used:
-        s = ctx.sources.get(sid)
-        if s:
-            note = f" ({s.note})" if s.note else ""
-            lines.append(f"- [{s.id}] {s.dataset} — {s.period} — retrieved {s.retrieved_at}{note} — {s.url}")
+    lines = [f"- [{s.id}] {s.dataset} — {s.period} — retrieved {s.retrieved_at}{f' ({s.note})' if s.note else ''} — {s.url}" for s in used_sources(ctx)]
     return "### Sources\n\n" + ("\n".join(lines) if lines else "No dataset was queried for this answer.")
 
 
@@ -88,9 +81,7 @@ def render(v: Validated, ctx: RequestContext) -> str:
     if ctx.partials:
         out.append("_Partial report: " + "; ".join(ctx.partials) + "._")
     out += [c.text for c in r.claims]
-    for block in (rank_table(ctx), quadrant_table(ctx)):
-        if block:
-            out.append(block)
+    out += [b for b in (rank_table(ctx), quadrant_table(ctx)) if b]
     out.append(cannot_section(r.data_cannot_tell_you))
     if r.followups:
         out.append("### You could also ask\n\n" + "\n".join(f"- {q}" for q in r.followups))
@@ -111,9 +102,7 @@ def render_partial(ctx: RequestContext, reason: str) -> str:
         out.append("\n".join(f"- {f.label}: {f.display} {_marks(f.source_ids)}".rstrip() for f in keep))
     else:
         out.append("No figures were completed before the time limit.")
-    for block in (rank_table(ctx), quadrant_table(ctx)):
-        if block:
-            out.append(block)
+    out += [b for b in (rank_table(ctx), quadrant_table(ctx)) if b]
     out.append(cannot_section(caveats(ctx)))
     out.append(sources_section(ctx))
     return "\n\n".join(out)
@@ -133,30 +122,17 @@ def render_scope(ctx: RequestContext, reason: str) -> str:
 
 # ---------------------------------------------------------------- structured artifacts for the UI
 
-_CENTROIDS: dict | None = None
-
-
 def zip_centroids() -> dict:
-    global _CENTROIDS
-    if _CENTROIDS is None:
-        try:
-            _CENTROIDS = json.loads((DATA_DIR / "ny_zip_centroids.json").read_text())
-        except (OSError, ValueError):
-            _CENTROIDS = {}
-    return _CENTROIDS
-
-
-def _stored(ctx: RequestContext, table_id: str):
     try:
-        return ctx.tables.get(table_id)
-    except KeyError:
-        return None
+        return load_json("ny_zip_centroids.json")
+    except (OSError, ValueError):
+        return {}
 
 
 def build_artifacts(ctx: RequestContext, hospitals: dict) -> dict:
     """Everything the evidence panel draws, from the stored tables and Facts only. `hospitals`: ccn -> cms.Hospital."""
     cents = zip_centroids()
-    rank, quad = _stored(ctx, "T_rank"), _stored(ctx, "T_quadrant")
+    rank, quad = ctx.tables.find("T_rank"), ctx.tables.find("T_quadrant")
     q_by = {r["ccn"]: r for r in (quad.rows if quad else [])}
     cohort = []
     for r in (rank.rows if rank else []):
@@ -183,7 +159,6 @@ def build_artifacts(ctx: RequestContext, hospitals: dict) -> dict:
                                              "quadrant": r["quadrant"], "focus": r["focus"]} for r in (quad.rows if quad else []) if r["quality_value"] is not None]},
     }
     tables = [{"id": t.id, "title": t.title, "columns": t.columns, "rows": t.rows} for t in (rank, quad) if t]
-    used = sorted({s for f in ctx.facts for s in f.source_ids}, key=lambda s: int(s[1:]))
-    sources = [{"id": s.id, "dataset": s.dataset, "period": s.period, "retrieved_at": s.retrieved_at, "url": s.url, "note": s.note} for s in (ctx.sources.get(i) for i in used) if s]
+    sources = [{k: getattr(s, k) for k in ("id", "dataset", "period", "retrieved_at", "url", "note")} for s in used_sources(ctx)]
     return {"cohort": cohort, "tables": tables, "charts": charts, "benchmarks": {"drg": primary, "ny": bench("state"), "national": bench("national")}, "sources": sources,
             "facts": [{"id": f.id, "label": f.label, "display": f.display, "source_ids": f.source_ids, "caveats": f.caveats} for f in ctx.facts]}

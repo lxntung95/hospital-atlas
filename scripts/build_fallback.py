@@ -13,12 +13,10 @@ from atlas.config import FALLBACK_DIR
 from atlas.crosswalk import crosswalk
 from atlas.http import CmsClient, save_fallback
 
-SPECS = [cms.GENERAL_INFO, cms.INPATIENT, cms.HRRP, cms.COMPLICATIONS, cms.NATIONAL, cms.HCAHPS_STAR]
-
 
 async def main():
     drgs = sorted({d for c in crosswalk().values() for d in c["drgs"]})
-    specs = SPECS + [cms.geo_spec(d) for d in drgs]
+    specs = [*cms.NY_SLICES, *(cms.geo_spec(d) for d in drgs)]
     client = CmsClient(fallback_dir=Path(mkdtemp()))  # empty dir: if live fails we want the error, not a stale snapshot
     total = 0
     for spec in specs:

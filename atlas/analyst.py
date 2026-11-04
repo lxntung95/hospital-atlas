@@ -123,8 +123,7 @@ def psi_signal(score: float | None, lower: float | None, upper: float | None, na
 
 
 def _src(table, drg: int | None = None) -> list[str]:
-    ids = table.meta.get("source_ids") or ([table.source_id] if table.source_id else [])
-    drgs = table.meta.get("drgs")
+    ids, drgs = table.source_ids, table.meta.get("drgs")
     if drg is not None and drgs and drg in drgs and len(ids) == len(drgs):
         return [ids[drgs.index(drg)]]
     return list(ids)
@@ -414,12 +413,11 @@ def _table_sources(result: Analysis, prefix: str) -> list[str]:
 
 async def analyze(ctx: RequestContext) -> Analysis:
     """Recompute everything from ctx.tables (idempotent), store Facts/Gaps on the context and the derived tables in the store."""
-    hospitals = {h.ccn: h for h in (await cms.general_info_ny(ctx.client)).rows}
-    result = analyze_tables(ctx, hospitals)
+    result = analyze_tables(ctx, await cms.hospitals(ctx.client))
     ctx.facts, ctx.gaps = result.facts, result.gaps
     if result.rank:
-        ctx.tables.put("T_rank", f"Cohort ranking by average total payment, DRG {result.primary_drg}", result.rank, owner="Analyst", kind="rank", source_ids=_table_sources(result, "cost."))
+        ctx.tables.put("T_rank", f"Cohort ranking by average total payment, DRG {result.primary_drg}", result.rank, _table_sources(result, "cost."), owner="Analyst", kind="rank")
     if result.quadrant:
-        ctx.tables.put("T_quadrant", f"Cost versus quality, DRG {result.primary_drg}", result.quadrant, owner="Analyst", kind="quadrant", source_ids=_table_sources(result, ""))
+        ctx.tables.put("T_quadrant", f"Cost versus quality, DRG {result.primary_drg}", result.quadrant, _table_sources(result, ""), owner="Analyst", kind="quadrant")
     ctx.record("Analyst", "analyze", {}, f"{len(result.facts)} facts, {len(result.gaps)} gaps ({sum(g.fillable for g in result.gaps)} fillable)")
     return result
