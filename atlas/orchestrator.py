@@ -12,9 +12,9 @@ from agents import Agent, RunContextWrapper, Runner, SQLiteSession
 from agents.agent import StopAtTools
 
 from atlas import analyst, cms, config, crosswalk, render, validate
-from atlas.agents import COHORT_RETRIEVER, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
+from atlas.agents import COHORT_RETRIEVER, CRITIC, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
 from atlas.context import RecordToolCalls, RequestContext
-from atlas.schemas import CohortSpec, Finding, Gap, Report, ResearchTask
+from atlas.schemas import CohortSpec, Critique, Finding, Gap, Report, ResearchTask
 from atlas.tools import err, make_cohort, ok, tool
 
 HOOKS = RecordToolCalls()  # stateless: it writes into whichever request context the run carries
@@ -32,7 +32,7 @@ def tuned(agent: Agent, c: RequestContext) -> Agent:
     if c.effort or c.model is not None:
         # Only the agents that plan and write get the chosen reasoning effort. Researchers and the retriever just call tools,
         # so extra reasoning there only adds latency (it made Balanced take 110 s).
-        eff = c.effort if agent.name == "Lead" else config.WRITER_EFFORT.get(c.effort, "low") if agent.name == "Writer" else "low"
+        eff = config.LEAD_EFFORT.get(c.effort, "low") if agent.name == "Lead" else config.WRITER_EFFORT.get(c.effort, "low") if agent.name == "Writer" else "low"
         kw["model_settings"] = config.effort_settings(agent.model_settings, eff or "low", c.model_id)
     return agent.clone(**kw)
 
@@ -200,6 +200,47 @@ async def compose(c: RequestContext, question: str, reason: str = "") -> str:
     return render.render(v, c)
 
 
+CRITIC_S = 12  # seconds the Critic may take; a slow or failed Critic is skipped, never waited for
+
+
+def _critic_input(c: RequestContext, question: str) -> str:
+    measures = json.loads((config.DATA_DIR / "measures.json").read_text())
+    return json.dumps({"question": question, "facts": [{"label": f.label, "display": f.display} for f in c.facts[:80]],
+                       "known_gaps": [g.detail for g in c.gaps], "allowed_measure_ids": sorted(measures),
+                       "allowed_drgs": sorted({r["drg"] for t in c.tables.all() for r in t.rows if isinstance(r.get("drg"), int)})})
+
+
+def _critique_tasks(c: RequestContext, crit: Critique) -> list[ResearchTask]:
+    """Validate the Critic's suggestions against the real measure list and the DRGs already seen; drop anything invented."""
+    measures = set(json.loads((config.DATA_DIR / "measures.json").read_text()))
+    handle, out = list(c.cohorts)[-1], []
+    for t in crit.tasks[:2]:
+        drgs, ms = [d for d in t.drg_codes if 100 <= d <= 999][:3], [m for m in t.measure_ids if m in measures][:4]
+        if (t.kind == "cost" and drgs) or (t.kind == "quality" and ms):
+            n = c.counters.get("researchers", 0) + len(out) + 1
+            out.append(ResearchTask(id=f"R{n}", kind=t.kind, question=t.why, cohort_handle=handle, drg_codes=drgs, measure_ids=ms))
+    return out
+
+
+async def run_critic(c: RequestContext, question: str) -> None:
+    """Thinking mode only: an LLM reads the analysed facts against the question. Unanswered parts become known gaps (the Writer states
+    them); valid extra lookups run as one more gap round. Any failure or timeout is skipped so the answer is never delayed past CRITIC_S."""
+    c.stage("reviewing the analysis")
+    try:
+        res = await asyncio.wait_for(Runner.run(tuned(CRITIC, c), _critic_input(c, question), context=c.child("Critic"), max_turns=2), CRITIC_S)
+        crit = res.final_output if isinstance(res.final_output, Critique) else Critique.model_validate_json(str(res.final_output))
+    except Exception as exc:
+        c.record("Critic", "review", {}, f"skipped: {type(exc).__name__}")
+        return
+    tasks = _critique_tasks(c, crit)
+    c.record("Critic", "review", {"unanswered": crit.unanswered[:3]}, f"{len(crit.unanswered)} unanswered, {len(tasks)} extra lookups")
+    if tasks and c.rounds_used < 1 + config.gap_rounds(c.effort) and c.remaining() >= config.WRITER_RESERVE_S + MIN_ROUND_S:
+        await _run_round(c, tasks)  # the Analyst re-runs and recomputes the gaps, so the Critic's notes would be overwritten: skip them
+        return
+    for u in crit.unanswered[:3]:  # nothing to look up: say so in the report (the Writer sees gaps; "can't tell you" lists unfillable ones)
+        c.gaps.append(Gap(kind="missing_metric", detail=f"Not covered by the data gathered: {u}", fillable=False))
+
+
 def _gap_tasks(c: RequestContext) -> list[ResearchTask]:
     handle = list(c.cohorts)[-1]
     out, seen = [], set()
@@ -229,6 +270,8 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
         if tasks:
             c.record("Lead", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")
             await _run_round(c, tasks)
+    if c.effort == "high" and c.rounds_used >= 1 and c.facts and not reason and c.remaining() >= config.WRITER_RESERVE_S + CRITIC_S + 5:
+        await run_critic(c, c.question)
     return await compose(c, c.question, reason)
 
 

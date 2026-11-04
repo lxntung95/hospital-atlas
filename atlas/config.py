@@ -82,7 +82,10 @@ def effort_settings(base: ModelSettings, effort: str, model_id: str | None = Non
 
 MAX_GAP_ROUNDS = 2  # upper bound (Thinking); Fast and Balanced get 1, see gap_rounds()
 GAP_ROUNDS = {"low": 1, "medium": 1, "high": 2}
-WRITER_EFFORT = {"low": "low", "medium": "low", "high": "medium"}  # the Writer timed out at higher reasoning
+# High reasoning on the Lead's first planning turn took 12-94 s (measured), which blew the Thinking budget; the Writer timed out at higher reasoning.
+# Thinking therefore means: medium Lead reasoning, a Critic review, two gap rounds and more turns.
+LEAD_EFFORT = {"low": "low", "medium": "medium", "high": "medium"}
+WRITER_EFFORT = {"low": "low", "medium": "low", "high": "low"}
 
 
 def gap_rounds(effort: str) -> int:

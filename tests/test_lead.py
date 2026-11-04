@@ -158,3 +158,44 @@ async def test_write_report_fills_fillable_gaps_once(ctx, monkeypatch):
     assert await call(orchestrator.write_report, ctx) == "REPORT"
     assert ran == [[("cost", [292])]]
     assert await call(orchestrator.write_report, ctx) == "REPORT" and len(ran) == 1  # nothing fillable left
+
+
+async def test_critic_runs_only_in_thinking_and_adds_gaps(ctx, monkeypatch):
+    from atlas import orchestrator
+    from atlas.schemas import Critique
+
+    async def fake_compose(c, q, reason):
+        return "REPORT"
+
+    class Res:
+        final_output = Critique(unanswered=["mortality was not looked at"], tasks=[])
+
+    calls = []
+
+    async def fake_run(agent, payload, **kw):
+        calls.append(agent.name)
+        return Res()
+
+    monkeypatch.setattr(orchestrator, "compose", fake_compose)
+    monkeypatch.setattr(orchestrator.Runner, "run", fake_run)
+    ctx.rounds_used = 1
+    ctx.cohorts["C1"] = {"ccns": ["330059"]}
+    ctx.facts = [type("F", (), {"label": "x", "display": "1"})()]
+    ctx.question = "q"
+    ctx.effort = "medium"
+    await call(orchestrator.write_report, ctx)
+    assert calls == []  # Balanced: no Critic
+    ctx.effort = "high"
+    await call(orchestrator.write_report, ctx)
+    assert calls == ["Critic"] and any("mortality" in g.detail for g in ctx.gaps)
+
+
+def test_critic_tasks_drop_invented_ids(ctx):
+    from atlas import orchestrator
+    from atlas.schemas import Critique, CritiqueTask
+
+    ctx.cohorts["C1"] = {"ccns": []}
+    crit = Critique(tasks=[CritiqueTask(kind="quality", measure_ids=["MORT_30_HF", "MADE_UP"], why="mortality"),
+                           CritiqueTask(kind="cost", drg_codes=[5], why="bad drg"), CritiqueTask(kind="quality", measure_ids=["NOPE"], why="none valid")])
+    tasks = orchestrator._critique_tasks(ctx, crit)
+    assert len(tasks) == 1 and tasks[0].measure_ids == ["MORT_30_HF"]

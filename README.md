@@ -103,7 +103,7 @@ Mapping to the assignment's deep-research checklist:
 | Time budget and failure handling | 240 s request budget, per-agent timeouts, `render_partial` safety net, `ATLAS_FAULT=timeout\|error` fault injection |
 | Deployment | Cloud Run from GitHub `main` (continuous deploy), IAP restricted to columbia.edu |
 
-Models (selectable in the UI, through Vertex AI and LiteLLM): Gemini 3.5 Flash-Lite (default, about 20 s per question), Gemini 3.5 Flash and Gemini 3.1 Pro preview (both much slower, 2 minutes or more). Claude, Grok and OpenAI gpt-oss were tried and are not usable on this project (no Anthropic quota, xAI not enabled, gpt-oss does not drive the tool loop reliably). Effort: Fast / Balanced / Thinking. It changes the reasoning of the Lead and Writer only, and the number of gap rounds (1, 1, 2); researchers always run fast. Measured on Q2 with Flash-Lite: 23 s / 26 s / 63 s.
+Models (selectable in the UI, through Vertex AI and LiteLLM): Gemini 3.5 Flash-Lite (default, about 20 s per question), Gemini 3.5 Flash and Gemini 3.1 Pro preview (both much slower, 2 minutes or more). Claude, Grok and OpenAI gpt-oss were tried and are not usable on this project (no Anthropic quota, xAI not enabled, gpt-oss does not drive the tool loop reliably). Effort: Fast / Balanced / Thinking (measured on Q1 and Q2 with Flash-Lite: about 21 s / 26 s / 40 s, with occasional slow Vertex calls). Balanced gives the Lead medium reasoning. Thinking adds a **Critic**: an LLM reads the analysed facts against the question, unanswered parts are stated in the report, and valid extra lookups (checked against the real measure list) run as one more round. Thinking also allows 2 gap rounds. Researchers and the Writer always run at low reasoning to protect latency.
 
 # DATA SOURCES
 

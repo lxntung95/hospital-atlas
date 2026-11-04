@@ -7,10 +7,10 @@ from agents import Agent, AgentOutputSchema
 from agents.agent import StopAtTools
 
 from atlas.config import MODEL, SETTINGS
-from atlas.schemas import Claim, CohortSpec, Finding, Gap, Report, ResearchTask  # re-exported for callers
+from atlas.schemas import Claim, CohortSpec, Critique, Finding, Gap, Report, ResearchTask  # re-exported for callers
 from atlas.tools import COST_TOOLS, QUALITY_TOOLS, RETRIEVER_TOOLS
 
-__all__ = ["Claim", "Report", "WRITER", "CohortSpec", "Finding", "Gap", "ResearchTask", "COHORT_RETRIEVER", "COST_RESEARCHER", "QUALITY_RESEARCHER", "MAX_TURNS"]
+__all__ = ["Claim", "Critique", "Report", "WRITER", "CRITIC", "CohortSpec", "Finding", "Gap", "ResearchTask", "COHORT_RETRIEVER", "COST_RESEARCHER", "QUALITY_RESEARCHER", "MAX_TURNS"]
 
 TOOL_SETTINGS = replace(SETTINGS, tool_choice="required")  # every turn must be a tool call
 MAX_TURNS = {"retriever": 6, "cost": 6, "quality": 6}
@@ -75,4 +75,16 @@ Rules:
 - If facts are missing for part of the question, say so instead of guessing.""",
     model=MODEL, model_settings=SETTINGS,
     output_type=AgentOutputSchema(Report, strict_json_schema=False),
+)
+
+
+CRITIC = Agent(
+    name="Critic",
+    instructions="""You review a finished analysis before it is written up. Input is JSON: the user's question, the analysed facts (label and display), the gaps already known, and the allowed measure ids and DRG families.
+Decide whether the facts answer EVERY part of the question (cost, readmissions, mortality, complications, patient experience, comparison with NY or national, the named hospitals).
+- unanswered: parts of the question the facts do not cover (max 3 short sentences). Do not repeat the known gaps. If everything is covered, return an empty list.
+- tasks: at most 2 extra lookups that would cover an unanswered part. Use ONLY measure ids and DRG codes from the allowed lists. If none would help, return an empty list.
+Never invent data and never write numbers.""",
+    model=MODEL, model_settings=SETTINGS,
+    output_type=AgentOutputSchema(Critique, strict_json_schema=False),
 )
