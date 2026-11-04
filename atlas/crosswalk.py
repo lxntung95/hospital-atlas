@@ -29,20 +29,20 @@ OUT_OF_SCOPE_NAMES = [
 
 
 @lru_cache
-def _load(name: str):
+def load_json(name: str):
     return json.loads((DATA_DIR / name).read_text())
 
 
 def crosswalk() -> dict:
-    return _load("crosswalk.json")
+    return load_json("crosswalk.json")
 
 
 def measures() -> dict:
-    return _load("measures.json")
+    return load_json("measures.json")
 
 
 def regions() -> dict:
-    return _load("regions.json")
+    return load_json("regions.json")
 
 
 def _norm(text: str) -> str:

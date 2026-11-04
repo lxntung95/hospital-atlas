@@ -1,35 +1,41 @@
 """Sources (S#): every dataset pull the report may cite, with a reproducible URL."""
 
 from dataclasses import dataclass
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from atlas.config import DATA_API, PROVIDER_API
 
 
-def data_api_url(dataset_id: str, filters: dict[str, str] | None = None, size: int | None = None, offset: int | None = None) -> str:
-    """Reproducible data-api URL (unencoded brackets so it can be pasted into a browser or curl -g)."""
-    parts = [f"filter[{k}]={quote(str(v))}" for k, v in (filters or {}).items()]
-    if size is not None:
-        parts.append(f"size={size}")
-    if offset:
-        parts.append(f"offset={offset}")
-    return f"{DATA_API}/{dataset_id}/data" + ("?" + "&".join(parts) if parts else "")
+def data_api_params(filters: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    return [(f"filter[{k}]", str(v)) for k, v in (filters or {}).items()]
 
 
-def provider_url(dataset_id: str, conditions: list[tuple[str, str, str | list[str]]] | None = None, limit: int | None = None, offset: int | None = None) -> str:
-    """Reproducible Provider Data URL. conditions: [(property, operator, value or list)]."""
-    parts = []
+def provider_params(conditions: list[tuple[str, str, str | list[str]]] | None = None) -> list[tuple[str, str]]:
+    """Provider Data query pairs. conditions: [(property, operator, value or list of values)]."""
+    out = []
     for i, (prop, op, value) in enumerate(conditions or []):
-        parts.append(f"conditions[{i}][property]={prop}")
-        for v in value if isinstance(value, list) else [value]:
-            parts.append(f"conditions[{i}][value]{'[]' if isinstance(value, list) else ''}={quote(str(v))}")
-        parts.append(f"conditions[{i}][operator]={quote(op)}")
-    if limit is not None:
-        parts.append(f"limit={limit}")
-    if offset:
-        parts.append(f"offset={offset}")
-    parts.append("count=true")
-    return f"{PROVIDER_API}/{dataset_id}/0?" + "&".join(parts)
+        out.append((f"conditions[{i}][property]", prop))
+        out += [(f"conditions[{i}][value][]", v) for v in value] if isinstance(value, (list, tuple)) else [(f"conditions[{i}][value]", value)]
+        out.append((f"conditions[{i}][operator]", op))
+    return out
+
+
+def _url(base: str, pairs: list[tuple[str, str]]) -> str:
+    """Reproducible URL with unencoded brackets so it can be pasted into a browser or curl -g."""
+    return base + ("?" + "&".join(f"{k}={quote(str(v))}" for k, v in pairs) if pairs else "")
+
+
+def data_api_url(dataset_id: str, filters: dict[str, str] | None = None) -> str:
+    return _url(f"{DATA_API}/{dataset_id}/data", data_api_params(filters))
+
+
+def provider_url(dataset_id: str, conditions: list[tuple[str, str, str | list[str]]] | None = None) -> str:
+    return _url(f"{PROVIDER_API}/{dataset_id}/0", provider_params(conditions) + [("count", "true")])
+
+
+def sid_key(source_id: str) -> int:
+    """Sort key for S# ids (S2 before S10)."""
+    return int(source_id[1:])
 
 
 @dataclass

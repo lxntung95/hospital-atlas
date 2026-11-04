@@ -3,16 +3,7 @@
 import json
 
 from atlas import tools
-from tests.conftest import call
-
-
-async def j(tool, ctx, **kw):
-    return json.loads(await call(tool, ctx, **kw))
-
-
-async def bronx(ctx):
-    r = await j(tools.build_cohort, ctx, ccns=["330059"], counties=["Bronx"], label="Bronx")
-    return r["cohort_handle"]
+from tests.conftest import bronx, call, j
 
 
 async def test_find_hospitals_and_out_of_scope(ctx):

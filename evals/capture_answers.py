@@ -11,9 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from evals.baseline import MORE, Q1, Q2, Q3
-
-CASES = [("Q1", [Q1]), ("Q2", [Q2]), ("Q3", Q3), ("More 1", [MORE[0]]), ("More 2", [MORE[1]])]
+from evals.common import CASES, auth_headers
 
 
 def main() -> None:
@@ -21,9 +19,8 @@ def main() -> None:
     ap.add_argument("--url", default="http://localhost:8080")
     ap.add_argument("--token", default="")
     a = ap.parse_args()
-    headers = {"Authorization": f"Bearer {a.token}"} if a.token else {}
     out = [f"# Agent answers\n\nServer: {a.url}. Captured {dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M} UTC.\n"]
-    with httpx.Client(timeout=300, headers=headers) as c:
+    with httpx.Client(timeout=300, headers=auth_headers(a.token)) as c:
         for name, turns in CASES:
             sid = str(uuid.uuid4())
             out.append(f"## {name}\n")

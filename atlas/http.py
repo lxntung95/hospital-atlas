@@ -5,7 +5,7 @@ import asyncio
 import gzip
 import json
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from atlas import config
-from atlas.sources import data_api_url, provider_url
+from atlas.sources import data_api_params, data_api_url, provider_params, provider_url
 
 
 class DataUnavailable(Exception):
@@ -30,6 +30,8 @@ class SliceSpec:
     filters: tuple = ()  # data_api: ((field, value), ...)
     conditions: tuple = ()  # provider: ((property, operator, value or list), ...)
     columns: tuple | None = None  # keep only these columns (smaller memory and fallback files)
+    title: str = ""  # dataset name for the Source
+    period: str | None = None  # fixed period text; None = taken from the rows
 
     @property
     def url(self) -> str:
@@ -179,7 +181,7 @@ class CmsClient:
         url = f"{config.DATA_API}/{spec.dataset_id}/data"
         rows, offset = [], 0
         while True:
-            params = [(f"filter[{k}]", v) for k, v in spec.filters] + [("size", str(config.DATA_API_PAGE)), ("offset", str(offset))]
+            params = data_api_params(dict(spec.filters)) + [("size", str(config.DATA_API_PAGE)), ("offset", str(offset))]
             page = await self._get_json(url, params)
             rows += page
             if len(page) < config.DATA_API_PAGE:
@@ -190,13 +192,7 @@ class CmsClient:
         url = f"{config.PROVIDER_API}/{spec.dataset_id}/0"
         rows, offset = [], 0
         while True:
-            params = [("limit", str(config.PROVIDER_PAGE)), ("offset", str(offset)), ("count", "true")]
-            for i, (prop, op, value) in enumerate(spec.conditions):
-                params += [(f"conditions[{i}][property]", prop), (f"conditions[{i}][operator]", op)]
-                if isinstance(value, (list, tuple)):
-                    params += [(f"conditions[{i}][value][]", v) for v in value]
-                else:
-                    params.append((f"conditions[{i}][value]", value))
+            params = [("limit", str(config.PROVIDER_PAGE)), ("offset", str(offset)), ("count", "true")] + provider_params(spec.conditions)
             page = await self._get_json(url, params)
             batch = page["results"]
             rows += batch

@@ -5,7 +5,7 @@ import os
 import weakref
 from pathlib import Path
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from agents import ModelSettings
 from openai.types.shared import Reasoning
@@ -19,21 +19,19 @@ FALLBACK_DIR = DATA_DIR / "fallback"
 
 MODEL_ID = os.environ.get("ATLAS_MODEL", "vertex_ai/gemini-3.5-flash-lite")
 MODEL_CALLS = 4  # at most this many concurrent model calls per process (Vertex 429s otherwise)
-_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict]" = weakref.WeakKeyDictionary()
 
 
-def _gate() -> asyncio.Semaphore:
-    loop = asyncio.get_running_loop()
-    if loop not in _gates:
-        _gates[loop] = asyncio.Semaphore(MODEL_CALLS)
-    return _gates[loop]
+def loop_semaphore(name: str, size: int) -> asyncio.Semaphore:
+    """One semaphore per (event loop, name): asyncio semaphores must not be shared across loops."""
+    return _gates.setdefault(asyncio.get_running_loop(), {}).setdefault(name, asyncio.Semaphore(size))
 
 
 class LimitedModel(LitellmModel):
     """LitellmModel with a process-wide cap on concurrent calls."""
 
     async def get_response(self, *args, **kwargs):
-        async with _gate():
+        async with loop_semaphore("model", MODEL_CALLS):
             return await super().get_response(*args, **kwargs)
 
 
@@ -49,13 +47,9 @@ MODEL_CHOICES = {
     "vertex_ai/gemini-3.5-flash": "Gemini 3.5 Flash (slower)",
     "vertex_ai/gemini-3.1-pro-preview": "Gemini 3.1 Pro preview (slowest)",
 }
-MODEL_LOCATION: dict[str, str] = {}  # per-model Vertex location override; everything is "global" today
 if MODEL_ID not in MODEL_CHOICES:  # an ATLAS_MODEL override stays selectable
     MODEL_CHOICES[MODEL_ID] = MODEL_ID
 DEFAULT_MODEL = MODEL_ID
-EFFORT_LEVELS = {"low": "Fast", "medium": "Balanced", "high": "Thinking"}
-DEFAULT_EFFORT = "low"  # see Phase 11 notes for measured latencies
-EXTRA_TURNS = {"low": 0, "medium": 0, "high": 2}  # Thinking lets each researcher use a couple more tool turns
 _models: dict[str, LimitedModel] = {MODEL_ID: MODEL}
 
 
@@ -68,33 +62,38 @@ def build_model(model_id: str) -> LimitedModel:
     return _models[model_id]
 
 
-def effort_settings(base: ModelSettings, effort: str, model_id: str | None = None) -> ModelSettings:
-    """Copy of `base` with the reasoning effort (and the model's Vertex location) for this request."""
-    if effort not in EFFORT_LEVELS:
-        raise ValueError(f"unknown effort {effort!r}; choose one of: {', '.join(EFFORT_LEVELS)}")
-    extra = dict(base.extra_args or {})
-    if model_id in MODEL_LOCATION:
-        extra["vertex_location"] = MODEL_LOCATION[model_id]
-    return replace(base, reasoning=Reasoning(effort=effort), extra_args=extra)
+def effort_settings(base: ModelSettings, effort: str) -> ModelSettings:
+    """Copy of `base` with the given reasoning effort."""
+    return replace(base, reasoning=Reasoning(effort=effort))
 
 
-# --- Research budgets (seconds) and loop caps ---
+# --- Effort levels and research budgets (seconds) ---
 
-MAX_GAP_ROUNDS = 2  # upper bound (Thinking); Fast and Balanced get 1, see gap_rounds()
-GAP_ROUNDS = {"low": 1, "medium": 1, "high": 2}
-# High reasoning on the Lead's first planning turn took 12-94 s (measured), which blew the Thinking budget; the Writer timed out at higher reasoning.
-# Thinking therefore means: medium Lead reasoning, a Critic review, two gap rounds and more turns.
-LEAD_EFFORT = {"low": "low", "medium": "medium", "high": "medium"}
-WRITER_EFFORT = {"low": "low", "medium": "low", "high": "low"}
+@dataclass(frozen=True)
+class Effort:
+    label: str
+    lead: str  # reasoning effort of the Lead. High reasoning on its first planning turn took 12-94 s (measured), so Thinking stays at medium;
+    gap_rounds: int  # extra research rounds after round 1; the researchers, retriever, Critic and Writer always run at low reasoning
+    extra_turns: int  # additional tool turns per researcher
+    critic: bool  # an LLM Critic reviews the analysis before writing
 
 
-def gap_rounds(effort: str) -> int:
-    return GAP_ROUNDS.get(effort, 1)
+EFFORTS = {"low": Effort("Fast", "low", 1, 0, False), "medium": Effort("Balanced", "medium", 1, 0, False), "high": Effort("Thinking", "medium", 2, 2, True)}
+EFFORT_LEVELS = {k: v.label for k, v in EFFORTS.items()}
+DEFAULT_EFFORT = "low"
+
+
+def effort(name: str | None) -> Effort:
+    return EFFORTS.get(name or "", EFFORTS[DEFAULT_EFFORT])
+
+
 REQUEST_S = 240
 RESEARCHER_S = 60
 RETRIEVER_S = 30
 WRITER_RESERVE_S = 45
 WRITER_S = 30  # per Writer attempt (the repair attempt gets the remainder of the reserve)
+MIN_ROUND_S = 30  # do not start a research round with less than this left after the writer reserve
+CRITIC_S = 12  # the Critic may take this long; a slow or failed Critic is skipped
 
 # --- Live data ---
 
@@ -111,7 +110,7 @@ PROVIDER_API = "https://data.cms.gov/provider-data/api/1/datastore/query"
 DATA_API_PAGE = 5000  # data-api max page size
 PROVIDER_PAGE = 1500  # Provider Data max limit (1600 returns 400)
 
-# dataset ids (see docs/PLAN 1/Overview.md section 2)
+# dataset ids
 GENERAL_INFO = "xubh-q36u"
 INPATIENT_BY_PROVIDER = "690ddc6c-2767-4618-b277-420ffb2bf27c"  # CY2024
 INPATIENT_BY_GEOGRAPHY = "2941ab09-8cee-49d8-9703-f3c5b854e388"

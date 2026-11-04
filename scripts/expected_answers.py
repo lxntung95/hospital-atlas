@@ -1,11 +1,10 @@
 """Recompute the README's expected answers (Q1-Q3) straight from the CMS endpoints, with plain code that shares nothing
 with the agent (no atlas imports). Prints values with the exact endpoint URLs and today's date.
 
-    uv run python scripts/expected_answers.py
+    uv run python -m scripts.expected_answers
 """
 
 import datetime as dt
-import json
 from urllib.parse import urlencode
 
 import httpx

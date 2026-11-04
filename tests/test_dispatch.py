@@ -7,15 +7,7 @@ from types import SimpleNamespace
 
 from atlas import config, orchestrator
 from atlas.schemas import Finding, ResearchTask
-from tests.conftest import call
-
-
-def task(i, kind="cost"):
-    return ResearchTask(id=f"R{i}", kind=kind, question="q", cohort_handle="C1", drg_codes=[291], measure_ids=[]).model_dump()
-
-
-def prepare(ctx):
-    ctx.cohorts["C1"] = {"ccns": ["330059"], "label": "x"}
+from tests.conftest import call, prepare, task
 
 
 def stub_run(monkeypatch, behaviour):
@@ -37,7 +29,7 @@ async def test_three_researchers_run_in_parallel(ctx, monkeypatch):
     out = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2, "quality"), task(3, "quality")]))
     assert time.monotonic() - t0 < 0.8  # sequential would be >= 0.9
     assert [f["agent"] for f in out["findings"]] == ["Cost Researcher R1", "Quality Researcher R2", "Quality Researcher R3"]
-    assert out["round"] == 1 and out["rounds_left"] == config.gap_rounds(ctx.effort) and all(f["status"] == "ok" for f in out["findings"])
+    assert out["round"] == 1 and out["rounds_left"] == config.effort(ctx.effort).gap_rounds and all(f["status"] == "ok" for f in out["findings"])
 
 
 async def test_error_and_timeout_become_partial_findings(ctx, monkeypatch):
@@ -86,7 +78,7 @@ async def test_round_cap_and_budget(ctx, monkeypatch):
     ctx.effort = "high"  # Thinking allows the maximum number of gap rounds
     stub_run(monkeypatch, lambda a, c: asyncio.sleep(0))
     assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
-    for _ in range(config.gap_rounds("high")):  # gap rounds may be a single task
+    for _ in range(config.effort("high").gap_rounds):  # gap rounds may be a single task
         assert "findings" in json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1)]))
     r = json.loads(await call(orchestrator.dispatch_researchers, ctx, tasks=[task(1), task(2), task(3)]))
     assert "round limit" in r["error"]
@@ -103,25 +95,25 @@ async def test_hooks_record_agent_and_time(ctx):
     assert c["agent"] == "Cost Researcher R1" and c["args"] == {"q": 1} and len(c["result"]) == 800 and "t" in c
 
 
-async def test_deterministic_cohort_fallback_when_retriever_fails(ctx, monkeypatch):
+async def test_deterministic_cohort_fallback_when_retriever_fails(ctx, stub_runner):
     async def boom(*a, **k):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", boom)
+    stub_runner(boom)
     out = json.loads(await call(orchestrator.resolve_cohort, ctx, request="Compare Montefiore with other Bronx hospitals on heart failure"))
     assert out["focus_hospitals"][0]["ccn"] == "330059" and 291 in out["drg_codes"] and "MORT_30_HF" in out["measure_ids"]
     assert "330059" in ctx.cohorts[out["cohort_handle"]]["ccns"] and out["n"] >= 3
 
 
-async def test_deterministic_fallback_flags_out_of_scope(ctx, monkeypatch):
+async def test_deterministic_fallback_flags_out_of_scope(ctx, stub_runner):
     async def boom(*a, **k):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr(orchestrator.Runner, "run", boom)
+    stub_runner(boom)
     out = json.loads(await call(orchestrator.resolve_cohort, ctx, request="How does Boston do on knee replacement?"))
     assert out["unresolved"] and "boston" in out["unresolved"][0]
 
 
 def test_gap_rounds_and_effort_labels():
-    assert config.gap_rounds("low") == 1 and config.gap_rounds("medium") == 1 and config.gap_rounds("high") == 2
+    assert [config.effort(e).gap_rounds for e in ("low", "medium", "high")] == [1, 1, 2] and config.effort("bogus") is config.effort("low")
     assert config.EFFORT_LEVELS["high"] == "Thinking"

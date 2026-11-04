@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 
 from agents import RunHooks
 
-from atlas.config import REQUEST_S
+from atlas import config
 from atlas.http import CmsClient
 from atlas.sources import SourceRegistry
 from atlas.store import TableStore
@@ -43,7 +43,7 @@ class RequestContext:
     gaps: list = field(default_factory=list)
     counters: dict[str, int] = field(default_factory=lambda: {"researchers": 0})
     started: float = field(default_factory=time.monotonic)
-    budget_s: float = REQUEST_S
+    budget_s: float = config.REQUEST_S
     rounds_used: int = 0  # only the Lead's dispatch tool changes this (on the parent context)
     owner: str = "Lead"  # which agent run this context view belongs to
 
@@ -59,6 +59,18 @@ class RequestContext:
 
     def remaining(self) -> float:
         return self.budget_s - self.elapsed()
+
+    @property
+    def max_rounds(self) -> int:
+        return 1 + config.effort(self.effort).gap_rounds
+
+    @property
+    def rounds_left(self) -> int:
+        return self.max_rounds - self.rounds_used
+
+    def can_research(self, extra_s: float = 0) -> bool:
+        """Another round is allowed and there is time for it plus the Writer reserve."""
+        return self.rounds_left > 0 and self.remaining() >= config.WRITER_RESERVE_S + config.MIN_ROUND_S + extra_s
 
     def record(self, agent: str, name: str, args: dict, result: str) -> None:
         """Add a synthetic entry (for code steps such as the Analyst) to tool_calls."""

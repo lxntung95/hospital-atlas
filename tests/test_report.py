@@ -4,7 +4,7 @@ import pytest
 
 from atlas import analyst, orchestrator, render, validate
 from atlas.schemas import Claim, Report
-from tests.test_analyst import hf_bronx
+from tests.conftest import hf_bronx
 
 
 @pytest.fixture

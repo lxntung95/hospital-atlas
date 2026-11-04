@@ -128,9 +128,9 @@ Provider-data pattern: `https://data.cms.gov/provider-data/api/1/datastore/query
 ```bash
 uv run pytest -m "not network"       # ~110 offline tests: adapters, tools, dispatch, analyst, validator, renderer, API, UI static checks
 uv run pytest -m network             # live CMS paging checks
-uv run python evals/run_evals.py     # E1-E8 end-to-end cases against a local run (add --url/--token for the deployed app)
-uv run python scripts/expected_answers.py   # recompute the README's expected answers from CMS
-uv run python evals/baseline.py      # regenerate the no-tools baselines
+uv run python -m evals.run_evals # E1-E8 end-to-end cases against a local run (add --url/--token for the deployed app)
+uv run python -m scripts.expected_answers   # recompute the README's expected answers from CMS
+uv run python -m evals.baseline   # regenerate the no-tools baselines
 uv run python -m evals.capture_answers      # capture agent answers for Q1-Q3
 ```
 
@@ -154,8 +154,8 @@ atlas/                 config, http (cache, retries, fallback), cms (typed adapt
                        tools, agents, orchestrator, analyst, validate, render, progress, schemas
 data/                  crosswalk, measures, regions, ZIP centroids, fallback/*.json.gz
 web/index.html         single-page UI (chat, timeline, map, tables, charts, sources)
-evals/                 cases.jsonl, run_evals.py, baseline.py (+ baselines.md), capture_answers.py (+ agent_answers.md)
-scripts/               expected_answers.py, build_fallback.py, build_zip_centroids.py, smoke scripts
+evals/                 cases.jsonl, common.py, run_evals.py, baseline.py (+ baselines.md), capture_answers.py (+ agent_answers.md)
+scripts/               expected_answers.py, build_fallback.py, build_zip_centroids.py, smoke_q2.py
 tests/                 offline and network tests
 submission.json        deploy_url, authors, path
 ```

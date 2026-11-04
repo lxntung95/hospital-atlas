@@ -1,26 +1,10 @@
 """Analyst tests: deterministic facts from fixtures and from the shipped snapshot (offline)."""
 
-import json
 
-import pytest
 
 from atlas import analyst, tools
 from atlas.analyst import fmt_int, fmt_ordinal, fmt_pct, fmt_period, fmt_ratio, fmt_usd, psi_signal, quartiles, weighted_mean
-from tests.conftest import call
-
-
-async def j(tool, ctx, **kw):
-    return json.loads(await call(tool, ctx, **kw))
-
-
-async def hf_bronx(ctx):
-    h = (await j(tools.build_cohort, ctx, ccns=["330059"], counties=["Bronx"], label="Bronx"))["cohort_handle"]
-    await j(tools.get_drg_costs, ctx, cohort_handle=h, drg_codes=[291])
-    await j(tools.get_cost_benchmarks, ctx, drg_codes=[291])
-    await j(tools.get_readmissions, ctx, cohort_handle=h, measure_ids=["READM-30-HF-HRRP"])
-    await j(tools.get_outcomes, ctx, cohort_handle=h, measure_ids=["MORT_30_HF"])
-    await j(tools.get_patient_experience, ctx, cohort_handle=h)
-    return h
+from tests.conftest import hf_bronx, j
 
 
 def test_formatters():

@@ -1,20 +1,17 @@
 """Live smoke test for the fan-out path: runs the Q2 prompt end to end and prints the tool-call timeline.
 
 Checks: at least three distinct researcher agents ran, their time windows overlap (parallel), and every tool call has `agent`.
-Run: uv run scripts/smoke_q2.py ["your own question"]
+Run: uv run python -m scripts.smoke_q2 ["your own question"]
 """
 
 import asyncio
 import sys
 import time
 import uuid
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so `atlas` imports when run as a script
+from agents import set_tracing_disabled
 
-from agents import set_tracing_disabled  # noqa: E402
-
-from atlas.orchestrator import answer  # noqa: E402
+from atlas.orchestrator import answer
 
 set_tracing_disabled(True)
 Q2 = "Compare Montefiore with the other Bronx hospitals on heart failure: Medicare payments and readmissions. Is Montefiore worth its cost?"

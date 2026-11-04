@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from atlas.context import RequestContext
 from atlas.schemas import Claim, Report
+from atlas.sources import sid_key
 
 CITE = re.compile(r"\[S(\d+)\]")
 MEASURE = re.compile(r"\b[A-Za-z]+(?:[-_][A-Za-z0-9]+)+\b")  # READM-30-HF-HRRP, MORT_30_HF, PSI_90, Hybrid_HWM
@@ -50,20 +51,17 @@ class Validated:
     violations: list[str] = field(default_factory=list)
 
 
-def _values(text: str) -> list[float]:
-    out = []
-    for m in NUM.findall(text):
-        try:
-            out.append(abs(float(m.replace("$", "").replace(",", ""))))
-        except ValueError:
-            pass
-    return out
+def _number(token: str) -> float | None:
+    try:
+        return abs(float(token.replace("$", "").replace(",", "")))
+    except ValueError:
+        return None
 
 
 def _fact_numbers(facts) -> list[float]:
     vals: list[float] = []
     for f in facts:
-        vals += _values(f.display)
+        vals += [v for v in map(_number, NUM.findall(f.display)) if v is not None]
         if isinstance(f.value, (int, float)) and not isinstance(f.value, bool):
             vals.append(abs(float(f.value)))
     return vals
@@ -78,9 +76,8 @@ def _scrub(text: str) -> str:
 def unmatched_numbers(text: str, pool: list[float]) -> list[str]:
     bad = []
     for m in NUM.findall(_scrub(text)):
-        try:
-            v = abs(float(m.replace("$", "").replace(",", "")))
-        except ValueError:
+        v = _number(m)
+        if v is None:
             continue
         if v == int(v) and "." not in m and int(v) in ALLOWED_INTS and "$" not in m and "," not in m:
             continue
@@ -93,12 +90,12 @@ def caveats(ctx: RequestContext) -> list[str]:
     out = list(BASE_CAVEATS)
     out += [g.detail for g in ctx.gaps if not g.fillable]
     out += [f"Partial result: {p}." for p in ctx.partials]
-    seen, uniq = set(), []
-    for c in out:
-        if c not in seen:
-            seen.add(c)
-            uniq.append(c)
-    return uniq
+    return list(dict.fromkeys(out))
+
+
+def _pool(facts: dict, fids: list[str], fallback: list[float]) -> list[float]:
+    """Numbers a claim may use: those of the facts it cites, or of all facts when it cites none."""
+    return _fact_numbers([facts[i] for i in fids if i in facts]) or fallback
 
 
 def find_violations(report: Report, ctx: RequestContext) -> list[str]:
@@ -111,8 +108,7 @@ def find_violations(report: Report, ctx: RequestContext) -> list[str]:
         for s in set(CITE.findall(text)):
             if ctx.sources.get(f"S{s}") is None:
                 out.append(f"{where}: source S{s} does not exist")
-        pool = _fact_numbers([facts[i] for i in fids if i in facts]) or all_pool
-        for n in unmatched_numbers(text, pool):
+        for n in unmatched_numbers(text, _pool(facts, fids, all_pool)):
             out.append(f"{where}: number {n} is not the display of a cited fact; copy displays verbatim")
         for i in fids:
             if i not in facts:
@@ -140,7 +136,7 @@ def sanitize(report: Report, ctx: RequestContext, repaired: bool = False) -> Val
             return m.group(0)
 
         text = FACT_MARK.sub("", CITE.sub(drop_cite, text))
-        pool = _fact_numbers([facts[i] for i in fids if i in facts]) or all_pool
+        pool = _pool(facts, fids, all_pool)
         kept = []
         for sent in SENTENCE.split(text.strip()):
             if unmatched_numbers(sent, pool):
@@ -162,11 +158,11 @@ def sanitize(report: Report, ctx: RequestContext, repaired: bool = False) -> Val
         want = set(cited) | {s for s in c.source_ids if ctx.sources.get(s)}
         for i in fids:
             want |= set(facts[i].source_ids)
-        missing = sorted(want - cited, key=lambda s: int(s[1:]))
+        missing = sorted(want - cited, key=sid_key)
         if missing:
             audit.attached_sources += len(missing)
             text = f"{text} " + "".join(f"[{s}]" for s in missing)
-        claims.append(Claim(text=text, fact_ids=fids, source_ids=sorted(want, key=lambda s: int(s[1:]))))
+        claims.append(Claim(text=text, fact_ids=fids, source_ids=sorted(want, key=sid_key)))
     cannot = [x for x in report.data_cannot_tell_you if x.strip()]
     merged = cannot + [c for c in caveats(ctx) if c not in cannot]
     return Validated(Report(headline=headline, claims=claims, data_cannot_tell_you=merged, followups=report.followups[:3]), audit)

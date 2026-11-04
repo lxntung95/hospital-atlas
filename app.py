@@ -23,9 +23,9 @@ set_tracing_disabled(True)
 
 async def warm_cache():
     """Fetch the NY slices in the background so the first question does not pay for them. Never blocks startup."""
-    for fetch in (cms.general_info_ny, cms.ny_inpatient, cms.hrrp_ny, cms.complications_ny, cms.complications_national, cms.hcahps_star_ny):
+    for spec in cms.NY_SLICES:
         with contextlib.suppress(Exception):  # a failed warm-up just means the first request fetches (or falls back)
-            await fetch()
+            await get_client().get_slice(spec)
 
 
 @contextlib.asynccontextmanager
@@ -58,14 +58,6 @@ class ChatResponse(BaseModel):
 
 MAX_CONCURRENT_RUNS = 2
 BUSY_WAIT_S = 30
-_gates: dict = {}
-
-
-def run_gate() -> asyncio.Semaphore:
-    loop = asyncio.get_running_loop()
-    if loop not in _gates:
-        _gates[loop] = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
-    return _gates[loop]
 
 
 def message_only(text: str, session_id: str, model: str | None = None, effort: str | None = None) -> ChatResponse:
@@ -75,11 +67,7 @@ def message_only(text: str, session_id: str, model: str | None = None, effort: s
 @app.exception_handler(Exception)
 async def show_errors_in_chat(request: Request, exc: Exception):
     # Auth, billing, a model that is not running: show it in the chat, not as a 500.
-    return JSONResponse({
-        "response": f"Model call failed: {type(exc).__name__}: {str(exc)[:300]}",
-        "session_id": request.query_params.get("session_id", ""),
-        "tool_calls": [],
-    })
+    return JSONResponse(message_only(f"Model call failed: {type(exc).__name__}: {str(exc)[:300]}", request.query_params.get("session_id", "")).model_dump())
 
 
 @app.get("/")
@@ -111,7 +99,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         return message_only(f"Unknown model {request.model!r}. Choose one of: {', '.join(config.MODEL_CHOICES)}.", session_id, request.model, request.effort)
     if request.effort and request.effort not in config.EFFORT_LEVELS:
         return message_only(f"Unknown effort {request.effort!r}. Choose one of: {', '.join(config.EFFORT_LEVELS)}.", session_id, request.model, request.effort)
-    gate = run_gate()
+    gate = config.loop_semaphore("runs", MAX_CONCURRENT_RUNS)
     try:
         await asyncio.wait_for(gate.acquire(), BUSY_WAIT_S)
     except asyncio.TimeoutError:
