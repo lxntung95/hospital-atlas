@@ -6,6 +6,7 @@ Rule: nothing here calls a model, and missing input produces a Gap, never an inv
 """
 
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -122,6 +123,11 @@ def psi_signal(score: float | None, lower: float | None, upper: float | None, na
     return "not distinguishable"
 
 
+def _few(n: int | None, minimum: int, what: str) -> list[str]:
+    """The small-sample caveat, or nothing when n reaches the threshold."""
+    return [f"only {n} {what}: treat as unstable"] if (n or 0) < minimum else []
+
+
 def _src(table, drg: int | None = None) -> list[str]:
     ids, drgs = table.source_ids, table.meta.get("drgs")
     if drg is not None and drgs and drg in drgs and len(ids) == len(drgs):
@@ -216,7 +222,7 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
             if r["ccn"] not in featured:
                 continue
             ccn, kk = r["ccn"], f"{k}.{r['ccn']}"
-            cav = [f"only {r['discharges']} Medicare discharges: treat as unstable"] if (r["discharges"] or 0) < MIN_DISCHARGES else []
+            cav = _few(r["discharges"], MIN_DISCHARGES, "Medicare discharges")
             b.add(f"{kk}.avg_total_payment", f"{r['name']} DRG {drg} average total payment", r["avg_total_payment"], fmt_usd(r["avg_total_payment"]), "usd", src, table, ccn, drg, caveats=cav)
             b.add(f"{kk}.discharges", f"{r['name']} DRG {drg} Medicare discharges", r["discharges"], fmt_int(r["discharges"] or 0), "count", src, table, ccn, drg)
             b.add(f"{kk}.rank", f"{r['name']} DRG {drg} payment rank in cohort", i, fmt_rank(i, n), "rank", src, table, ccn, drg)
@@ -261,7 +267,7 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
             continue
         err, cases = r["excess_readmission_ratio"], r["cases"]
         sig = "worse than expected" if err > 1 else "better than expected" if err < 1 else "as expected"
-        cav = [f"only {cases} cases: treat as unstable"] if (cases or 0) < MIN_HRRP_CASES else []
+        cav = _few(cases, MIN_HRRP_CASES, "cases")
         src = _src(t)
         kk = f"quality.{r['measure']}.{r['ccn']}"
         b.add(f"{kk}.err", f"{r['name']} {r['measure']} excess readmission ratio", err, fmt_ratio(err), "ratio", src, t, r["ccn"], measure=r["measure"], caveats=cav)
@@ -312,7 +318,7 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
         periods.setdefault(("HCAHPS", r["period"]), t)
         if r["ccn"] not in feat_q or r["stars"] is None:
             continue
-        cav = [f"only {r['surveys']} completed surveys: treat as unstable"] if (r["surveys"] or 0) < MIN_SURVEYS else []
+        cav = _few(r["surveys"], MIN_SURVEYS, "completed surveys")
         b.add(f"quality.hcahps.{r['ccn']}.stars", f"{r['name']} HCAHPS overall star rating", r["stars"], f"{r['stars']} of 5 stars", "stars", _src(t), t, r["ccn"], caveats=cav + ["from patient surveys, not clinical quality"])
 
     # ---- cost-vs-quality quadrant (primary DRG vs the condition's headline quality measure)
@@ -354,10 +360,7 @@ def analyze_tables(ctx: RequestContext, hospitals: dict) -> Analysis:
             out.quadrant.append({"ccn": r["ccn"], "name": r["name"], "drg": primary, "avg_total_payment": r["avg_total_payment"], "payment_display": fmt_usd(r["avg_total_payment"]),
                                  "quality_measure": measure, "quality_value": qv, "quality_display": qd, "quadrant": q, "reason": why, "focus": r["ccn"] in focus})
         if out.quadrant and measure:
-            counts = {}
-            for row in out.quadrant:
-                counts[row["quadrant"]] = counts.get(row["quadrant"], 0) + 1
-            for name, cnt in sorted(counts.items()):
+            for name, cnt in sorted(Counter(row["quadrant"] for row in out.quadrant).items()):
                 b.add(f"quadrant.drg{primary}.{name}", f"hospitals in the '{name}' group (DRG {primary} payment vs {measure})", cnt, fmt_int(cnt), "count", [], None, measure=measure,
                       caveats=["cost split at the cohort median payment; quality split at 1.0 (readmissions) or the national rate"])
 
