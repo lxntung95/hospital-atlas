@@ -117,6 +117,10 @@ def find_violations(report: Report, ctx: RequestContext) -> list[str]:
         for s in c.source_ids:
             if ctx.sources.get(s) is None:
                 out.append(f"claim source {s} does not exist")
+    for where, items in (("can't-tell-you item", report.data_cannot_tell_you), ("follow-up", report.followups)):
+        for x in items:
+            for n in unmatched_numbers(x, all_pool):
+                out.append(f"{where}: number {n} is not the display of a fact; leave numbers out or copy a display verbatim")
     if len(report.data_cannot_tell_you) < 2:
         out.append("data_cannot_tell_you needs at least 2 items")
     return out
@@ -163,9 +167,10 @@ def sanitize(report: Report, ctx: RequestContext, repaired: bool = False) -> Val
             audit.attached_sources += len(missing)
             text = f"{text} " + "".join(f"[{s}]" for s in missing)
         claims.append(Claim(text=text, fact_ids=fids, source_ids=sorted(want, key=sid_key)))
-    cannot = [x for x in report.data_cannot_tell_you if x.strip()]
+    cannot = [t for t in (clean_text(x, []) for x in report.data_cannot_tell_you) if t]  # free text reaches the user too: same checks as claims
     merged = cannot + [c for c in caveats(ctx) if c not in cannot]
-    return Validated(Report(headline=headline, claims=claims, data_cannot_tell_you=merged, followups=report.followups[:3]), audit)
+    followups = [t for t in (clean_text(x, []) for x in report.followups[:3]) if t]
+    return Validated(Report(headline=headline, claims=claims, data_cannot_tell_you=merged, followups=followups), audit)
 
 
 async def validate(report: Report, ctx: RequestContext, repair=None) -> Validated:

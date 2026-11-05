@@ -56,8 +56,8 @@ class ChatResponse(BaseModel):
     meta: dict | None = None  # {model, model_label, effort, elapsed_s, rounds, served_from, notes, audit}
 
 
-MAX_CONCURRENT_RUNS = 2
-BUSY_WAIT_S = 30
+MAX_CONCURRENT_RUNS = 4  # model calls are capped separately (config.MODEL_CALLS); a run waits its turn rather than failing
+BUSY_WAIT_S = 120  # well under Cloud Run's 600 s timeout and the graders' 5 minute wait
 
 
 def message_only(text: str, session_id: str, model: str | None = None, effort: str | None = None) -> ChatResponse:

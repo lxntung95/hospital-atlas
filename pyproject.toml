@@ -9,7 +9,7 @@ dependencies = [
     "openai-agents[litellm]==0.24.0",  # Agents SDK + LiteLLM bridge; the version the course demos were verified on
     "litellm==1.83.0",                 # pinned to the demos' lock so Gemini tool calling behaves the same
     "google-cloud-aiplatform>=1.40.0", # Vertex AI auth for Gemini (older docs still call it Vertex AI)
-    "httpx>=0.27",                     # async HTTP client for the CMS and PubMed APIs
+    "httpx>=0.27",                     # async HTTP client for the CMS APIs
 ]
 
 [dependency-groups]

@@ -3,7 +3,7 @@
 from atlas.context import RequestContext
 from atlas.crosswalk import load_json
 from atlas.sources import sid_key
-from atlas.validate import Audit, Validated, caveats
+from atlas.validate import CITE, Audit, Validated, caveats
 
 RANK_ROWS = 10
 
@@ -45,14 +45,14 @@ def quadrant_table(ctx: RequestContext) -> str:
     return cap + "\n\n" + _table(["Hospital", "Avg total payment", "Quality measure", "Value", "Group"], body)
 
 
-def used_sources(ctx: RequestContext) -> list:
-    """The sources behind at least one fact, in S# order."""
-    ids = sorted({s for f in ctx.facts for s in f.source_ids}, key=sid_key)
+def used_sources(ctx: RequestContext, text: str = "") -> list:
+    """The sources behind at least one fact, plus any registered source the text cites, in S# order (so every [S#] in the answer has a line)."""
+    ids = sorted({s for f in ctx.facts for s in f.source_ids} | {f"S{n}" for n in CITE.findall(text)}, key=sid_key)
     return [s for s in map(ctx.sources.get, ids) if s]
 
 
-def sources_section(ctx: RequestContext) -> str:
-    lines = [f"- [{s.id}] {s.dataset} — {s.period} — retrieved {s.retrieved_at}{f' ({s.note})' if s.note else ''} — {s.url}" for s in used_sources(ctx)]
+def sources_section(ctx: RequestContext, text: str = "") -> str:
+    lines = [f"- [{s.id}] {s.dataset} — {s.period} — retrieved {s.retrieved_at}{f' ({s.note})' if s.note else ''} — {s.url}" for s in used_sources(ctx, text)]
     return "### Sources\n\n" + ("\n".join(lines) if lines else "No dataset was queried for this answer.")
 
 
@@ -85,7 +85,7 @@ def render(v: Validated, ctx: RequestContext) -> str:
     out.append(cannot_section(r.data_cannot_tell_you))
     if r.followups:
         out.append("### You could also ask\n\n" + "\n".join(f"- {q}" for q in r.followups))
-    out.append(sources_section(ctx))
+    out.append(sources_section(ctx, "\n".join(out)))
     a = audit_line(v.audit)
     if a:
         out.append(a)
@@ -129,8 +129,8 @@ def zip_centroids() -> dict:
         return {}
 
 
-def build_artifacts(ctx: RequestContext, hospitals: dict) -> dict:
-    """Everything the evidence panel draws, from the stored tables and Facts only. `hospitals`: ccn -> cms.Hospital."""
+def build_artifacts(ctx: RequestContext, hospitals: dict, text: str = "") -> dict:
+    """Everything the evidence panel draws, from the stored tables and Facts only. `hospitals`: ccn -> cms.Hospital; `text`: the answer, for its citations."""
     cents = zip_centroids()
     rank, quad = ctx.tables.find("T_rank"), ctx.tables.find("T_quadrant")
     q_by = {r["ccn"]: r for r in (quad.rows if quad else [])}
@@ -159,6 +159,6 @@ def build_artifacts(ctx: RequestContext, hospitals: dict) -> dict:
                                              "quadrant": r["quadrant"], "focus": r["focus"]} for r in (quad.rows if quad else []) if r["quality_value"] is not None]},
     }
     tables = [{"id": t.id, "title": t.title, "columns": t.columns, "rows": t.rows} for t in (rank, quad) if t]
-    sources = [{k: getattr(s, k) for k in ("id", "dataset", "period", "retrieved_at", "url", "note")} for s in used_sources(ctx)]
+    sources = [{k: getattr(s, k) for k in ("id", "dataset", "period", "retrieved_at", "url", "note")} for s in used_sources(ctx, text)]
     return {"cohort": cohort, "tables": tables, "charts": charts, "benchmarks": {"drg": primary, "ny": bench("state"), "national": bench("national")}, "sources": sources,
             "facts": [{"id": f.id, "label": f.label, "display": f.display, "source_ids": f.source_ids, "caveats": f.caveats} for f in ctx.facts]}

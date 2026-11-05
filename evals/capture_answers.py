@@ -1,7 +1,7 @@
 """Run the README questions through a running hospital-atlas server and save the final answers to evals/agent_answers.md.
 
-    uv run python evals/capture_answers.py                       # local server on :8080
-    uv run python evals/capture_answers.py --url https://... --token "$(gcloud auth print-identity-token)"
+    uv run python -m evals.capture_answers                          # local server on :8080
+    uv run python -m evals.capture_answers --url https://... --token "$(gcloud auth print-identity-token)"
 """
 
 import argparse

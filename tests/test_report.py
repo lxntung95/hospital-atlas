@@ -145,3 +145,23 @@ async def test_fact_markers_removed(done):
     r = Report(headline="h", claims=[Claim(text=f"Average is {f.display} [F3][F4].", fact_ids=[f.id])], data_cannot_tell_you=["a", "b"])
     v = await validate.validate(r, done)
     assert "[F" not in v.report.claims[0].text
+
+
+async def test_numbers_in_cannot_tell_and_followups_are_checked(done):
+    r = good_report(done)
+    r.data_cannot_tell_you = ["Why 4,321 patients were readmitted.", "Commercial prices."]
+    r.followups = ["Compare the 77.7% rate with the Bronx?", "Which hospital is cheapest?"]
+    assert any("can't-tell-you" in x for x in validate.find_violations(r, done)) and any("follow-up" in x for x in validate.find_violations(r, done))
+    v = validate.sanitize(r, done)
+    text = " ".join(v.report.data_cannot_tell_you + v.report.followups)
+    assert "4,321" not in text and "77.7" not in text and "Commercial prices." in text and "Which hospital is cheapest?" in text
+    assert v.audit.flagged_numbers == 2
+
+
+async def test_every_cited_source_has_a_sources_line(done):
+    cited_only = done.sources.add("Extra dataset", "dsX", "CY2024", "2026-11-05", "http://x/extra")  # queried, but behind no figure
+    r = good_report(done)
+    r.claims[0].text += f" See also [{cited_only.id}]."
+    md = render.render(validate.sanitize(r, done), done)
+    assert f"- [{cited_only.id}]" in md
+    assert all(f"- [S{n}]" in md for n in set(validate.CITE.findall(md.split("### Sources")[0])))
