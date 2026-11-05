@@ -9,7 +9,7 @@ import os
 from dataclasses import asdict, dataclass
 
 from agents import Agent, RunContextWrapper, Runner, SQLiteSession
-from agents.agent import StopAtTools
+from agents.agent import StopAtTools, ToolsToFinalOutputResult
 
 from atlas import analyst, cms, config, crosswalk, render, validate
 from atlas.agents import COHORT_RETRIEVER, CRITIC, WRITER, COST_RESEARCHER, MAX_TURNS, QUALITY_RESEARCHER, TOOL_SETTINGS
@@ -253,13 +253,18 @@ async def write_report(ctx: RunContextWrapper[RequestContext], reason: str = "")
     if c.rounds_used == 0 and not reason:
         raise ToolError("no research has run", "call resolve_cohort and dispatch_researchers first, or pass reason if the question is out of scope")
     if not reason and c.rounds_used >= 1 and c.cohorts and c.can_research(15):
-        tasks = _gap_tasks(c)  # the Lead skipped a fillable gap: run one deterministic gap round so the report is complete
-        if tasks:
-            c.record("Lead", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")
+        tasks = _gap_tasks(c)
+        if tasks and not c.nudged:  # the Lead decides the gap round: hand it the tasks once (an error result does not end its run, see _final_report)
+            c.nudged = True
+            raise ToolError("fillable gaps remain", "call dispatch_researchers ONCE with only these tasks, then call write_report: " + json.dumps([t.model_dump() for t in tasks]))
+        if tasks:  # the Lead went straight to writing again: fill the gap anyway so the report is complete
+            c.record("Orchestrator", "auto_gap_round", {"tasks": [t.id for t in tasks]}, "fillable gaps remained; filled automatically before writing")
             await _run_round(c, tasks)
     if config.effort(c.effort).critic and c.rounds_used >= 1 and c.facts and not reason and c.remaining() >= config.WRITER_RESERVE_S + config.CRITIC_S + 5:
         await run_critic(c, c.question)
-    return await compose(c, c.question, reason)
+    text = await compose(c, c.question, reason)
+    c.reported = True
+    return text
 
 
 CLARIFY_FALLBACK = {"question": "Which part of New York hospital care should I look at?",
@@ -273,7 +278,7 @@ def clarification_text(question: str, options: list[str]) -> str:
 
 @tool
 async def ask_clarifying_question(ctx: RunContextWrapper[RequestContext], question: str, options: list[str]) -> str:
-    """Ask the user ONE clarifying question instead of researching. Only for requests too vague to research (no condition, procedure, hospital or region). Always the last call.
+    """Ask the user ONE clarifying question instead of researching. Only for requests too vague to research (no condition, procedure or named hospital; a region alone is not enough). Always the last call.
 
     Args:
         question: One short question.
@@ -290,6 +295,14 @@ async def ask_clarifying_question(ctx: RunContextWrapper[RequestContext], questi
     return clarification_text(question, options)
 
 
+def _final_report(_ctx, results) -> ToolsToFinalOutputResult:
+    """The Lead's run ends with write_report's report. A write_report error (called too early, or fillable gaps remain) goes back to the Lead instead."""
+    for r in results:
+        if r.tool.name == "write_report" and isinstance(r.output, str) and not r.output.startswith("{"):
+            return ToolsToFinalOutputResult(is_final_output=True, final_output=r.output)
+    return ToolsToFinalOutputResult(is_final_output=False)
+
+
 LEAD_COMMON = """You are Hospital Atlas, a research lead for New York hospital cost and quality (Medicare data, CMS). Only New York hospitals exist in your data. Never invent numbers; you do not write the answer text."""
 
 LEAD = Agent(
@@ -300,16 +313,16 @@ LEAD = Agent(
    R1 kind "cost" with the drg_codes; R2 kind "quality" with the readmission and mortality/complication measure_ids; R3 kind "quality" about patient experience and patient-safety indicators (PSI_* ids if any are in measure_ids).
    Example task: {"id":"R1","kind":"cost","question":"Average Medicare payment by hospital for DRG 291","cohort_handle":"C1","drg_codes":[291],"measure_ids":[]}.
    If resolve_cohort gave no drg_codes, still send the three tasks, choosing DRGs only from find results.
-3. Read the result. If it lists gaps with fillable true and a suggested_task, and rounds_left is above 0, call dispatch_researchers again with ONLY those suggested tasks (one to three, new ids R4, R5...). Do this at most twice. Do not repeat a task. Unfillable gaps are not retried: the report states them.
+3. Read the result. If it lists gaps with fillable true and a suggested_task, and rounds_left is above 0, call dispatch_researchers again with ONLY those suggested tasks (one to three, new ids R4, R5...). Repeat while rounds_left is above 0 and fillable gaps remain. Do not repeat a task. Unfillable gaps are not retried: the report states them.
 4. Call write_report with no arguments. It writes, checks and cites the report; you never write the answer.
 If the question is not about New York hospital cost or quality (another state, an unsupported topic) call write_report with reason set to one plain sentence, without researching. Never call ask_clarifying_question in this mode.""",
     model=config.MODEL, model_settings=TOOL_SETTINGS, tools=[resolve_cohort, dispatch_researchers, write_report],
-    tool_use_behavior=StopAtTools(stop_at_tool_names=["write_report"]), reset_tool_choice=False,
+    tool_use_behavior=_final_report, reset_tool_choice=False,
 )
 
 LEAD_CLARIFY = Agent(
     name="Lead",
-    instructions=LEAD_COMMON + """ The user's request is too vague to research (no condition, procedure, hospital or region). Call ask_clarifying_question once with a short question and 3 or 4 concrete options, for example a procedure's cost in a region, a condition's quality, or comparing named hospitals.""",
+    instructions=LEAD_COMMON + """ The user's request is too vague to research (no condition, procedure or named hospital; a region alone is not enough). Call ask_clarifying_question once with a short question and 3 or 4 concrete options, for example a procedure's cost in a region, a condition's quality, or comparing named hospitals.""",
     model=config.MODEL, model_settings=TOOL_SETTINGS, tools=[ask_clarifying_question],
     tool_use_behavior=StopAtTools(stop_at_tool_names=["ask_clarifying_question"]), reset_tool_choice=False,
 )
@@ -362,7 +375,10 @@ async def _run_lead(ctx: RequestContext, message: str, session_id: str) -> str:
     if vague and not ctx.clarified:
         ctx.clarified = True
         return clarification_text(**CLARIFY_FALLBACK)
-    return str(result.final_output)
+    if vague or ctx.reported:
+        return str(result.final_output)
+    # The Lead ended without a report (plain text, or write_report never succeeded): unvalidated model text never reaches the user.
+    return await _rescue(ctx, "the research did not complete", write=ctx.remaining() > config.WRITER_RESERVE_S)
 
 
 HISTORY_MAX = 12
@@ -400,7 +416,7 @@ async def answer(message: str, session_id: str, client=None, model_id: str | Non
         text = await _rescue(ctx, f"{type(exc).__name__} in the research loop", write=ctx.remaining() > config.WRITER_RESERVE_S)
     _CLARIFIED[session_id] = ctx.clarified
     try:
-        ctx.artifacts = render.build_artifacts(ctx, await cms.hospitals(ctx.client))
+        ctx.artifacts = render.build_artifacts(ctx, await cms.hospitals(ctx.client), text)
     except Exception:
         ctx.artifacts = None
     return Answer(text, ctx.tool_calls, ctx)

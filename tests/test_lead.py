@@ -87,6 +87,7 @@ async def test_vague_first_turn_clarifies_then_never_twice(ctx, sessions_db, tmp
             out = await call(orchestrator.ask_clarifying_question, context, question="Which?", options=OPTIONS)
             await session.add_items([{"role": "user", "content": input}])
             return SimpleNamespace(final_output=out)
+        context.reported = True  # the Lead ended with write_report
         return SimpleNamespace(final_output="researched")
 
     stub_runner(fake)
@@ -148,9 +149,30 @@ async def test_write_report_fills_fillable_gaps_once(ctx, monkeypatch):
     ctx.rounds_used = 1
     ctx.cohorts["C1"] = {"ccns": ["330059"]}
     ctx.gaps = [Gap(kind="missing_metric", detail="DRG 292 missing", fillable=True, suggested_task={"kind": "cost", "drg_codes": [292]})]
-    assert await call(orchestrator.write_report, ctx) == "REPORT"
-    assert ran == [[("cost", [292])]]
+    first = json.loads(await call(orchestrator.write_report, ctx))  # the Lead is told about the gap first and decides the round itself
+    assert first["error"] == "fillable gaps remain" and "292" in first["advice"] and ran == []
+    assert await call(orchestrator.write_report, ctx) == "REPORT"  # it went straight to writing again: filled automatically, once
+    assert ran == [[("cost", [292])]] and ctx.tool_calls[-1]["agent"] == "Orchestrator"
     assert await call(orchestrator.write_report, ctx) == "REPORT" and len(ran) == 1  # nothing fillable left
+
+
+def test_error_json_is_not_a_final_report():
+    from atlas import orchestrator
+
+    def result(output):
+        return orchestrator._final_report(None, [SimpleNamespace(tool=SimpleNamespace(name="write_report"), output=output)])
+
+    assert not result('{"error": "no research has run", "advice": "x"}').is_final_output
+    assert result("## A report").is_final_output and result("## A report").final_output == "## A report"
+
+
+async def test_lead_ending_with_plain_text_never_reaches_the_user(ctx, sessions_db, stub_runner):
+    async def chatty(agent, input, context, hooks=None, session=None, max_turns=None):
+        return SimpleNamespace(final_output="Montefiore is the cheapest at $1 and best by far.")  # no write_report call
+
+    stub_runner(chatty)
+    a = await orchestrator.answer("Compare Montefiore with other Bronx hospitals on heart failure", "s-chatty", client=ctx.client)
+    assert "cheapest at $1" not in a.text and "could not finish" in a.text
 
 
 async def test_critic_runs_only_in_thinking_and_adds_gaps(ctx, monkeypatch, stub_runner):

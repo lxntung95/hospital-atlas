@@ -39,12 +39,14 @@ class RequestContext:
     prev_clarified: bool = False  # the previous assistant turn in this conversation was a clarification question
     partials: list = field(default_factory=list)  # researcher tasks that timed out or failed this request
     clarified: bool = False  # this turn ended in one
+    nudged: bool = False  # the Lead has been told once that fillable gaps remain
+    reported: bool = False  # write_report produced the final report
     facts: list = field(default_factory=list)  # filled by atlas.analyst.analyze
     gaps: list = field(default_factory=list)
     counters: dict[str, int] = field(default_factory=lambda: {"researchers": 0})
     started: float = field(default_factory=time.monotonic)
     budget_s: float = config.REQUEST_S
-    rounds_used: int = 0  # only the Lead's dispatch tool changes this (on the parent context)
+    rounds_used: int = 0  # research rounds run so far (the Lead's dispatches, the automatic gap round, the Critic's round)
     owner: str = "Lead"  # which agent run this context view belongs to
 
     def child(self, owner: str) -> "RequestContext":
