@@ -1,4 +1,4 @@
-# NAME
+# hospital-atlas
 
 **hospital-atlas**: a cited New York hospital cost and quality benchmarking agent over live CMS data.
 Columbia IEOR E4570, Project 2 (Data Exploration Agent, deep-research path). Author: `ant2150`.
@@ -23,12 +23,13 @@ a defensible, sourced comparison and not a ranking blog post. They can reproduce
 - **Live, reproducible data.** Seven CMS datasets are queried at request time (cached 6 h, with a shipped fallback that is disclosed in the answer).
 - **The model never does arithmetic or writes a number.** A deterministic Analyst turns tables into Facts (`display` strings, source ids). The Writer sees only Facts; a validator checks every `[S#]` exists and every number matches a Fact within 0.5%, repairs once, then strips what it cannot verify and reports an Audit line.
 - **Real multi-agent work.** Cohort Retriever, then Cost and Quality Researchers in parallel, then a gap round (for example the sibling DRG), all visible as lanes in a live timeline.
+- **Data the model does not know.** CY2024 provider-level DRG payments and the 2025 quality refresh were published after the model's training data, and hospital-by-hospital figures are too detailed to memorise. The no-tools baselines below show it: they decline 2024 figures, or guess generic ranges. (The sign-up entry also listed PubMed and ClinicalTrials.gov as supporting evidence; they were dropped so that every number stays computable from CMS.)
 - **Honest scope.** Medicare fee-for-service averages for New York only. Questions about out-of-pocket prices or other states get a short, correct refusal with the reason.
 - **An evidence panel, not just a chat box.** Map (ZIP-centroid markers by cost/quality quadrant), sortable tables with CSV, charts, and a Sources tab wired to the `[S#]` citations.
 
 # SAMPLE QUERIES
 
-Expected answers come from `scripts/expected_answers.py`, which calls the CMS endpoints directly and shares no code with the agent (last run **2026-11-03**). Baselines are the same model with **no system prompt and no tools** (`evals/baseline.py` -> `evals/baselines.md`). Agent answers were captured by `evals/capture_answers.py` (`evals/agent_answers.md`; captured against a local run of the same code that Cloud Run deploys).
+Expected answers come from `scripts/expected_answers.py`, which calls the CMS endpoints directly and shares no code with the agent (last run **2026-11-05**; the values below are unchanged). Baselines are the same model with **no system prompt and no tools** (`evals/baseline.py` -> `evals/baselines.md`). Agent answers were captured by `evals/capture_answers.py` (`evals/agent_answers.md`; captured 2026-11-05 against a local run of the same `main` code that Cloud Run deploys, at the default Fast effort).
 
 ## Q1. Cost benchmark
 
@@ -38,17 +39,17 @@ Expected answers come from `scripts/expected_answers.py`, which calls the CMS en
 |---|---|
 | **Expected** (endpoints: `690ddc6c…` `Rndrng_Prvdr_State_Abrvtn=NY, DRG_Cd=470`; `2941ab09…` `DRG_Cd=470`) | 1 Montefiore 330059 $31,015 (186 discharges); 2 South Shore University 330043 $28,653 (102); 3 Brooklyn Hospital Center 330056 $27,728 (12, low volume); 4 Mount Sinai 330024 $27,622 (158); 5 Lenox Hill 330119 $26,238 (136). NY average $23,235, national $17,364; 56 NY hospitals have data. |
 | **No tools** | Declines to give 2024 figures, then lists HSS, NewYork-Presbyterian, NYU, Mount Sinai and North Shore from memory. Its "typical" ranges ($11.5-13.5K national, $14.5-17K NY, $18-22K top hospitals) are all below the real values. Montefiore, the real #1, is missing. |
-| **hospital-atlas** | Same five hospitals, same dollar figures, +33.5% / +23.3% / +19.3% / +18.9% / +12.9% vs the NY average, flags Brooklyn Hospital Center as a 12-discharge sample, cites S4 and S5. Audit clean. 12.7 s. |
+| **hospital-atlas** | Same five hospitals, same dollar figures, +33.5% / +23.3% / +19.3% / +18.9% / +12.9% vs the NY average, flags Brooklyn Hospital Center as a 12-discharge sample, cites S4 and S5. Audit clean. 13.9 s. |
 
-## Q2. Cost versus quality (shows the gap round and the parallel researchers)
+## Q2. Cost versus quality (shows parallel researchers and a gap round the Lead asks for)
 
 > How does Montefiore compare with other Bronx hospitals on heart failure — Medicare payment, 30-day readmissions and mortality?
 
 | | Result |
 |---|---|
 | **Expected** (DRG 291; `xubh-q36u` Bronx; `9n3s-kdb3` `READM-30-HF-HRRP`; `ynj2-r877` `MORT_30_HF`; `qqw3-t4ie`) | BronxCare $23,266 (54), ERR 1.1867, mortality 8.3; **Montefiore $24,163 (390), ERR 0.9349, mortality 5.2**; St Barnabas $27,390 (27), 1.0618, 11.1 (n=28, small); Jacobi $29,655 (89), 1.0321, 7.4; Lincoln $31,893 (39), 0.9848, 8.5. National HF mortality 11.1. NY DRG 291 average $16,034, national $12,053. NY has no DRG 293 (sibling is 292). |
-| **No tools** | Prose only: readmissions "around 21-23%", mortality "no different than national", payments "higher than average". Every statement is generic or wrong in direction (Montefiore's payment is above the NY average, but its readmission ratio is better than expected and its mortality 5.2 vs 11.1 nationally). No hospital-level numbers. |
-| **hospital-atlas** | Montefiore $24,163 (4th of 5 by payment, +50.7% vs NY average), ERR 0.935 "better than expected", mortality 5.2% (-5.9 pp vs national); ranking table of all five Bronx hospitals with the correct payments; quadrant: lower cost / better quality. Audit clean. 10.7 s. |
+| **No tools** | Generic prose with no hospital-level numbers: readmissions "around 21-23%", mortality "no different than national", payments "higher than average". It gets the payment direction right (Montefiore is above the NY average), but misses that Montefiore's readmission ratio is better than expected (0.935) and its mortality 5.2 is far below the national 11.1. |
+| **hospital-atlas** | Montefiore $24,163 (4th highest of 5, +50.7% vs NY average), ERR 0.935 "better than expected", mortality 5.2% vs 11.1% national (direction only); ranking and cost-versus-quality tables for all five Bronx hospitals with the correct payments and ERRs (Montefiore: lower cost / better quality). The Lead sent a second research round (the sibling DRG 292, which NY has no payment rows for). Draft revised once by the validator; 19.5 s. |
 
 ## Q3. Vague question, clarification, then a real answer
 
@@ -57,19 +58,20 @@ Expected answers come from `scripts/expected_answers.py`, which calls the CMS en
 | | Result |
 |---|---|
 | **Expected** (`xubh-q36u` NYC counties; DRG 469/470; `ynj2-r877` `COMP_HIP_KNEE`; `9n3s-kdb3` hip/knee) | Turn 1: ask one question with options (condition, region, cost or quality). Turn 2: 33 acute-care NYC hospitals; DRG 470 ranked by payment: Montefiore $31,015 (COMP 2.8, ERR 0.9730), Brooklyn Hospital Center $27,728, Mount Sinai $27,622, Lenox Hill $26,238, HSS $25,507 (1,332 discharges)…; national COMP_HIP_KNEE 4.1. |
-| **No tools** | Never asks anything; answers immediately with a U.S. News-style list of famous hospitals and no cost figures. |
-| **hospital-atlas** | Turn 1 returns one clarifying question with four options (1.2 s). Turn 2 builds a 12-hospital DRG 470 and 4-hospital DRG 469 ranking with the exact values above, readmission ratios, and small-sample flags. 11.5 s. |
+| **No tools** | Never asks anything; answers immediately with a U.S. News-style list of famous hospitals and commercial or cash price guesses, with no Medicare figures and no hospital-level quality data. |
+| **hospital-atlas** | Turn 1 returns one clarifying question with four options (1.1 s). Turn 2 (14.2 s) researches the NYC cohort: a 12-hospital DRG 470 ranking (the table shows the top 10 plus the asked-about hospitals) with payments matching the expected values (Montefiore $31,015, Mount Sinai $27,622, Lenox Hill $26,238), the DRG 469 payments in the text, Montefiore's ERR 0.973, and small-sample flags. |
 
 ## More to try (including questions the data cannot answer)
 
 - "What will I pay out of pocket for a knee replacement at NYU?" -> the agent gives NYU's Medicare average ($38,267 for DRG 469, $25,403 for DRG 470) and states plainly that out-of-pocket and commercial prices are not in the data.
+- "Which NY hospitals give the best quality for their cost on a given condition?" (the sign-up question) -> asks which condition; then "... for heart failure?" returns a cost-versus-quality grouping across hospitals.
 - "Cheapest knee replacement in Boston?" -> a short refusal: the data covers New York only.
 - "Compare Mount Sinai and NYU on pneumonia." / "Which Long Island hospitals have the best heart failure readmission ratios?" / "Is the Bronx VA expensive?" (no fee-for-service data exists for VA hospitals).
 
 # ARCHITECTURE
 
 ```
- browser (web/index.html)  --POST /chat {message, run_id, model, effort}-->  FastAPI (app.py)
+ browser (web/index.html)  --POST /chat {message, session_id, history, run_id, model, effort}-->  FastAPI (app.py)
         ^  GET /progress?run_id= every 1 s (live timeline)                         |
         |                                                                          v
         |                                                          orchestrator.answer()
@@ -84,7 +86,7 @@ Expected answers come from `scripts/expected_answers.py`, which calls the CMS en
         |                                                           |  tables + sources stored in RequestContext
         |                                                           v
         |                  Analyst (deterministic Python): Facts, Gaps, T_rank, T_quadrant
-        |                        fillable gap? -> round 2 (max 2 gap rounds) -> Analyst again
+        |                        fillable gap? -> write_report hands the tasks back to the Lead -> Lead dispatches round 2 (1 gap round; 2 at Thinking) -> Analyst again
         |                                                           v
         |                  write_report -> Writer (Facts only) -> validator (citations, numbers, repair once) -> renderer
         |                                                           v
@@ -95,15 +97,15 @@ Mapping to the assignment's deep-research checklist:
 
 | Requirement | Where |
 |---|---|
-| Tools over real data | `atlas/tools.py` (10 tools over `atlas/cms.py`), live CMS APIs |
-| Multi-agent | Lead, Cohort Retriever, Cost/Quality Researchers, Writer (OpenAI Agents SDK, `atlas/agents.py`, `atlas/orchestrator.py`) |
-| Parallel work and a second round | `dispatch_researchers` (`asyncio.gather`); gap rounds only for fillable gaps such as the sibling DRG |
+| Tools over real data | `atlas/tools.py` (10 data tools over `atlas/cms.py`) plus 4 Lead tools in `atlas/orchestrator.py`; live CMS APIs |
+| Multi-agent | Lead, Cohort Retriever, Cost/Quality Researchers, Critic (Thinking only), Writer (OpenAI Agents SDK, `atlas/agents.py`, `atlas/orchestrator.py`) |
+| Parallel work and a second round | One `dispatch_researchers` call runs 3-4 researchers with `asyncio.gather`, each as its own `Runner.run` with only its task as input (separate conversations; the tables and sources are shared through the request context). Fillable gaps (such as the sibling DRG) are handed back to the Lead by `write_report`, and the Lead dispatches the next round, capped by `rounds_left` and `max_turns`; if it skips it, the round runs as "Orchestrator" |
 | Planning and clarification | Lead prompt; `ask_clarifying_question` (never asks twice) |
 | Citations and verification | `atlas/sources.py`, `atlas/validate.py`; Audit line; Sources section with reproducible URLs |
 | Time budget and failure handling | 240 s request budget, per-agent timeouts, `render_partial` safety net, `ATLAS_FAULT=timeout\|error` fault injection |
 | Deployment | Cloud Run from GitHub `main` (continuous deploy), IAP restricted to columbia.edu |
 
-Models (selectable in the UI, through Vertex AI and LiteLLM): Gemini 3.5 Flash-Lite (default, about 20 s per question), Gemini 3.5 Flash and Gemini 3.1 Pro preview (both much slower, 2 minutes or more). Claude, Grok and OpenAI gpt-oss were tried and are not usable on this project (no Anthropic quota, xAI not enabled, gpt-oss does not drive the tool loop reliably). Effort: Fast / Balanced / Thinking (measured on Q1 and Q2 with Flash-Lite: about 21 s / 26 s / 40 s, with occasional slow Vertex calls). Balanced gives the Lead medium reasoning. Thinking adds a **Critic**: an LLM reads the analysed facts against the question, unanswered parts are stated in the report, and valid extra lookups (checked against the real measure list) run as one more round. Thinking also allows 2 gap rounds. Researchers and the Writer always run at low reasoning to protect latency.
+Models (selectable in the UI, through Vertex AI and LiteLLM): Gemini 3.5 Flash-Lite (fast, the default, 14-25 s per question), Gemini 3.5 Flash (medium, about 70 s) and Gemini 3.1 Pro preview (slow: 3-4 minutes, and it can come back as a labelled partial report when the 240 s budget runs out). Claude, Grok and OpenAI gpt-oss were tried and are not usable on this project (no Anthropic quota, xAI not enabled, gpt-oss does not drive the tool loop reliably). Effort: Fast / Balanced / Thinking (measured 2026-11-05 on Flash-Lite: about 15-25 s / 40 s / 60 s for a two-topic question, longer when several users run at once). Balanced gives the Lead medium reasoning. Thinking adds a **Critic**: an LLM reads the analysed facts against the question, unanswered parts are stated in the report, and valid extra lookups (checked against the real measure list) run as one more round. Thinking also allows 2 gap rounds. Researchers and the Writer always run at low reasoning to protect latency. If the Lead ends without calling `write_report`, or `write_report` fails, the user gets the validated rescue report, never raw model text.
 
 # DATA SOURCES
 
@@ -126,13 +128,15 @@ Provider-data pattern: `https://data.cms.gov/provider-data/api/1/datastore/query
 # TESTS AND EVALS
 
 ```bash
-uv run pytest -m "not network"       # ~110 offline tests: adapters, tools, dispatch, analyst, validator, renderer, API, UI static checks
+uv run pytest -m "not network"       # ~118 offline tests: adapters, tools, dispatch, analyst, validator, renderer, API, UI static checks
 uv run pytest -m network             # live CMS paging checks
 uv run python -m evals.run_evals # E1-E8 end-to-end cases against a local run (add --url/--token for the deployed app)
 uv run python -m scripts.expected_answers   # recompute the README's expected answers from CMS
 uv run python -m evals.baseline   # regenerate the no-tools baselines
 uv run python -m evals.capture_answers      # capture agent answers for Q1-Q3
 ```
+
+`evals/run_evals.py` runs eight end-to-end cases against a running server (string, regex and structural checks, no LLM judge): E1 Q1 figures; E2 Q2 with parallel researchers and citations; E3 clarify then answer; E4 a Boston hospital (out of scope, no researchers); E5 the Bronx VA (no fee-for-service data); E6 DRG 194 on Long Island (every tool call carries an agent, every citation resolves); E7 out-of-pocket (refusal with reason); E8 round count (two dispatches, or one when no gap is fillable).
 
 CI (`.github/workflows/tests.yml`) runs the offline suite on every pull request. Every phase was merged through a pull request with that check.
 
@@ -143,8 +147,8 @@ CI (`.github/workflows/tests.yml`) runs the offline suite on every pull request.
 - CMS suppresses hospital-DRG rows with fewer than 11 discharges; small samples are flagged, not hidden.
 - Cost is calendar 2024 while quality measures cover different periods, so cost-versus-quality quadrants are directional.
 - Mortality and complication scores are compared with the national rate by direction only (the CMS dataset publishes no confidence interval for the mortality measures).
-- Known weaknesses: for "compared with other hospitals" questions the Retriever can build a narrow cohort, and in Q2 the cost-versus-quality table lists only the hospital asked about although the cost ranking covers all five Bronx hospitals. Ratio and quadrant thresholds are heuristics documented in `atlas/analyst.py`.
-- One Cloud Run instance, two concurrent research runs, in-memory sessions (a restart loses server-side history; the browser keeps saved chats and re-seeds them).
+- Known weaknesses: for "compared with other hospitals" questions the Retriever can build a narrow cohort; Gemini 3.1 Pro preview can run past the time budget. Ratio and quadrant thresholds are heuristics documented in `atlas/analyst.py`.
+- One Cloud Run instance, four concurrent research runs (a fifth waits up to 120 s), in-memory sessions (a restart loses server-side history; the browser keeps saved chats and re-seeds them).
 
 # PROJECT STRUCTURE
 
